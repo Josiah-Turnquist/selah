@@ -8,7 +8,8 @@
     "scheme": "selah",
     "userInterfaceStyle": "automatic",
     "ios": {
-      "icon": "./assets/expo.icon"
+      "icon": "./assets/expo.icon",
+      "bundleIdentifier": "com.josiahturnq.selah"
     },
     "android": {
       "adaptiveIcon": {
@@ -39,6 +40,13 @@
     "experiments": {
       "typedRoutes": true,
       "reactCompiler": true
-    }
+    },
+    "extra": {
+      "router": {},
+      "eas": {
+        "projectId": "79315a5b-eda2-42e4-9f2b-5c041781d7db"
+      }
+    },
+    "owner": "josiahturnq"
   }
 }
