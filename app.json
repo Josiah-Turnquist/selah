@@ -1,21 +1,28 @@
 {
   "expo": {
-    "name": "selah",
+    "name": "Selah",
     "slug": "selah",
+    "owner": "josiahturnq",
     "version": "1.0.0",
+    "description": "A simple Bible app: read, plan, pray, and memorize.",
+    "primaryColor": "#1B1B1D",
     "orientation": "portrait",
     "icon": "./assets/images/icon.png",
     "scheme": "selah",
     "userInterfaceStyle": "automatic",
     "ios": {
-      "icon": "./assets/expo.icon"
+      "bundleIdentifier": "com.josiahturnq.selah",
+      "supportsTablet": false,
+      "icon": "./assets/images/icon.png",
+      "infoPlist": {
+        "ITSAppUsesNonExemptEncryption": false
+      }
     },
     "android": {
+      "package": "com.josiahturnq.selah",
       "adaptiveIcon": {
-        "backgroundColor": "#E6F4FE",
-        "foregroundImage": "./assets/images/android-icon-foreground.png",
-        "backgroundImage": "./assets/images/android-icon-background.png",
-        "monochromeImage": "./assets/images/android-icon-monochrome.png"
+        "backgroundColor": "#1B1B1D",
+        "foregroundImage": "./assets/images/adaptive-icon.png"
       },
       "predictiveBackGestureEnabled": false
     },
@@ -28,16 +35,14 @@
       [
         "expo-splash-screen",
         {
-          "backgroundColor": "#208AEF",
-          "android": {
-            "image": "./assets/images/splash-icon.png",
-            "imageWidth": 76
-          }
+          "backgroundColor": "#1B1B1D",
+          "image": "./assets/images/splash-icon.png",
+          "imageWidth": 170
         }
       ]
     ],
     "experiments": {
-      "typedRoutes": true,
+      "typedRoutes": false,
       "reactCompiler": true
     }
   }

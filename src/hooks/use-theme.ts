@@ -1,14 +1,21 @@
 /**
- * Learn more about light and dark modes:
- * https://docs.expo.dev/guides/color-schemes/
+ * Resolves the active color set from the selected palette + the effective
+ * light/dark scheme (the Appearance setting, falling back to the system scheme).
  */
 
-import { Colors } from '@/constants/theme';
+import { PALETTES } from '@/constants/theme';
 import { useColorScheme } from '@/hooks/use-color-scheme';
+import { useAppearance, usePaletteId } from '@/lib/store/store';
+
+export function useColorSchemeEffective(): 'light' | 'dark' {
+  const system = useColorScheme();
+  const appearance = useAppearance();
+  if (appearance === 'system') return system === 'dark' ? 'dark' : 'light';
+  return appearance;
+}
 
 export function useTheme() {
-  const scheme = useColorScheme();
-  const theme = scheme === 'unspecified' ? 'light' : scheme;
-
-  return Colors[theme];
+  const palette = usePaletteId();
+  const scheme = useColorSchemeEffective();
+  return PALETTES[palette][scheme];
 }

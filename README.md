@@ -1,56 +1,62 @@
-# Welcome to your Expo app 👋
+# Selah
 
-This is an [Expo](https://expo.dev) project created with [`create-expo-app`](https://www.npmjs.com/package/create-expo-app).
+A deliberately simple Bible app built around four ideas: read, plan, pray, and memorize.
+Expo (React Native) + expo-router, local-first, with scripture from the
+[Bolls](https://bolls.life) API. _Selah_ is a working name — rename freely.
 
-## Get started
+## The four features
 
-1. Install dependencies
+1. **Read** — Browse any of the 66 books, read in a clean serif layout, and select a
+   verse to **highlight** (5 colors), attach a **personal note** (shown inline), copy,
+   share, or send it straight to a study deck. Full-text search and a translation picker
+   are built in. Chapters you open are cached on-device for offline reading.
+2. **Plans** — Shareable, Bible-reading-only devotional plans (Bible in a Year, NT in 90
+   Days, Gospels in 30, Psalms & Proverbs in 31, John in 21). Track day-by-day progress,
+   your **% complete**, whether you're on track, and see **friends' progress**. Share a
+   plan with a code/link.
+3. **Pray** — Shareable prayer lists that **reset daily or weekly**. Checking an item
+   marks it prayed for the current cycle; it resets automatically at rollover. Per-item
+   streaks included.
+4. **Study** — Quizlet-style memorization. Add a verse to a deck from the reader, then
+   review with flashcards and self-graded spaced repetition (Leitner). The card model is
+   generic (`verse` and `fact` decks), so **V2** fact decks — the apostles, how they
+   died, etc. — already work; one sample is seeded.
 
-   ```bash
-   npm install
-   ```
-
-2. Start the app
-
-   ```bash
-   npx expo start
-   ```
-
-In the output, you'll find options to open the app in a
-
-- [development build](https://docs.expo.dev/develop/development-builds/introduction/)
-- [Android emulator](https://docs.expo.dev/workflow/android-studio-emulator/)
-- [iOS simulator](https://docs.expo.dev/workflow/ios-simulator/)
-- [Expo Go](https://expo.dev/go), a limited sandbox for trying out app development with Expo
-
-You can start developing by editing the files inside the **app** directory. This project uses [file-based routing](https://docs.expo.dev/router/introduction).
-
-## Get a fresh project
-
-When you're ready, run:
+## Run it
 
 ```bash
-npm run reset-project
+npm install
+npx expo start        # then press i (iOS), a (Android), or w (web)
+# or: npm run ios | npm run android | npm run web
 ```
 
-This command will move the starter code to the **app-example** directory and create a blank **app** directory where you can start developing.
+Requires Node 22.13+. First launch seeds sample data (a plan in progress, prayer lists,
+decks, friends) so every screen is alive; reset anytime in **Settings → Reset all app data**.
 
-### Other setup steps
+## How it's built
 
-- To set up ESLint for linting, run `npx expo lint`, or follow our guide on ["Using ESLint and Prettier"](https://docs.expo.dev/guides/using-eslint/)
-- If you'd like to set up unit testing, follow our guide on ["Unit Testing with Jest"](https://docs.expo.dev/develop/unit-testing/)
-- Learn more about the TypeScript setup in this template in our guide on ["Using TypeScript"](https://docs.expo.dev/guides/typescript/)
+- **Expo SDK 56**, expo-router (custom `expo-router/ui` tab bar), React 19 + React Compiler, TypeScript.
+- **Local-first store** — a single typed `AppData` object in `src/lib/store`, hydrated
+  from and persisted to AsyncStorage. No backend, no login.
+- **Bible text** — `src/lib/bible/bolls.ts` wraps the Bolls API (markup stripped, chapters
+  cached). Defaults to public-domain **WEB**; 15 translations available in the picker.
+- **Sharing** — `src/lib/share.ts` encodes a plan or prayer list into a compact
+  `selah://import/<code>` link (dependency-free base64url), importable on the Import screen.
 
-## Learn more
+```
+src/
+  app/                 # expo-router routes (tabs + reader/plan/prayer/deck/… screens)
+  components/          # UI kit (Screen, Button, Card, Sheet, ProgressRing, …) + sheets
+  constants/theme.ts   # colors (light "paper" + dark), spacing, type, highlight palette
+  lib/
+    bible/             # 66-book metadata, translations, Bolls client, ref helpers
+    plans/             # plan templates (generated from book data) + progress math
+    store/             # types, seed data, SRS, the persisted Context store
+    cycle.ts share.ts  # prayer-cycle logic, share codecs
+```
 
-To learn more about developing your project with Expo, look at the following resources:
+## What's deliberately not here (yet)
 
-- [Expo documentation](https://docs.expo.dev/): Learn fundamentals, or go into advanced topics with our [guides](https://docs.expo.dev/guides).
-- [Learn Expo tutorial](https://docs.expo.dev/tutorial/introduction/): Follow a step-by-step tutorial where you'll create a project that runs on Android, iOS, and the web.
-
-## Join the community
-
-Join our community of developers creating universal apps.
-
-- [Expo on GitHub](https://github.com/expo/expo): View our open source platform and contribute.
-- [Discord community](https://chat.expo.dev): Chat with Expo users and ask questions.
+Local-first means **sharing and "friends" are on-device** for now: plans/lists move by
+share-code, and the friends shown are seeded examples. A real account + sync backend
+(e.g. the Hono/Drizzle/Neon stack) is the natural next step to make sharing live.

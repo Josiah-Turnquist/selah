@@ -1,0 +1,564 @@
+import * as Clipboard from 'expo-clipboard';
+import { router, useLocalSearchParams } from 'expo-router';
+import {
+  ChevronLeft,
+  ChevronRight,
+  Copy,
+  GraduationCap,
+  Share2,
+  StickyNote,
+  Type as TypeIcon,
+  X,
+} from 'lucide-react-native';
+import { useEffect, useRef, useState } from 'react';
+import {
+  Animated,
+  Easing,
+  type NativeScrollEvent,
+  type NativeSyntheticEvent,
+  Platform,
+  Pressable,
+  ScrollView,
+  Share,
+  StyleSheet,
+  View,
+} from 'react-native';
+import { SafeAreaView, useSafeAreaInsets } from 'react-native-safe-area-context';
+
+import { BookNav } from '@/components/book-nav';
+import { DeckPicker } from '@/components/deck-picker';
+import { ThemedText } from '@/components/themed-text';
+import { TranslationSheet } from '@/components/translation-sheet';
+import { TextField } from '@/components/ui/field';
+import { Button, IconButton, type IconType } from '@/components/ui/primitives';
+import { ReaderSkeleton } from '@/components/ui/skeleton';
+import { Sheet } from '@/components/ui/sheet';
+import { useToast } from '@/components/ui/toast';
+import {
+  Fonts,
+  HIGHLIGHT_COLORS,
+  Highlights,
+  MaxContentWidth,
+  Radius,
+  Spacing,
+  highlightBg,
+} from '@/constants/theme';
+import { BOOKS, bookById } from '@/lib/bible/books';
+import { getChapter, prefetchChapter, type Verse } from '@/lib/bible/bolls';
+import { formatRef, formatVerseRange, refKey } from '@/lib/bible/refs';
+import { useColorScheme } from '@/hooks/use-color-scheme';
+import { useTheme } from '@/hooks/use-theme';
+import { useActions, useData } from '@/lib/store/store';
+import { tapLight, tapSuccess } from '@/lib/util/haptics';
+
+type Neighbor = { bookId: number; chapter: number } | null;
+
+function neighbor(bookId: number, chapter: number, dir: 1 | -1): Neighbor {
+  const book = bookById(bookId);
+  if (!book) return null;
+  const target = chapter + dir;
+  if (target >= 1 && target <= book.chapters) return { bookId, chapter: target };
+  const idx = BOOKS.findIndex((b) => b.id === bookId);
+  if (dir > 0) {
+    const next = BOOKS[idx + 1];
+    return next ? { bookId: next.id, chapter: 1 } : null;
+  }
+  const prev = BOOKS[idx - 1];
+  return prev ? { bookId: prev.id, chapter: prev.chapters } : null;
+}
+
+const round1 = (n: number) => Math.round(n * 10) / 10;
+const useNative = Platform.OS !== 'web';
+
+export default function ReaderScreen() {
+  const params = useLocalSearchParams<{ bookId: string; chapter: string; v?: string }>();
+  const bookId = parseInt(params.bookId, 10);
+  const chapter = parseInt(params.chapter, 10);
+  const targetVerse = params.v ? parseInt(params.v, 10) : null;
+
+  const data = useData();
+  const actions = useActions();
+  const theme = useTheme();
+  const toast = useToast();
+  const insets = useSafeAreaInsets();
+  const scheme = useColorScheme() === 'dark' ? 'dark' : 'light';
+  const translation = data.settings.translation;
+  const scale = data.settings.readerFontScale;
+  const book = bookById(bookId);
+
+  const [verses, setVerses] = useState<Verse[]>([]);
+  const [status, setStatus] = useState<'loading' | 'ready' | 'error'>('loading');
+  const [selected, setSelected] = useState<number[]>([]);
+  const [sheet, setSheet] = useState<'note' | 'deck' | null>(null);
+  const [noteText, setNoteText] = useState('');
+  const [flash, setFlash] = useState<number | null>(null);
+  const [showTranslation, setShowTranslation] = useState(false);
+  const [showChapters, setShowChapters] = useState(false);
+  const [showFont, setShowFont] = useState(false);
+
+  const scrollRef = useRef<ScrollView>(null);
+  const offsets = useRef<Record<number, number>>({});
+  const scrolled = useRef(false);
+  const progress = useRef(new Animated.Value(0)).current;
+  const headerY = useRef(new Animated.Value(0)).current;
+  const [headerH, setHeaderH] = useState(56);
+  const headerShown = useRef(true);
+  const lastScrollY = useRef(0);
+
+  const setHeaderVisible = (shown: boolean) => {
+    if (headerShown.current === shown) return;
+    headerShown.current = shown;
+    Animated.timing(headerY, {
+      toValue: shown ? 0 : -headerH,
+      duration: 220,
+      easing: Easing.out(Easing.cubic),
+      useNativeDriver: useNative,
+    }).start();
+  };
+
+  const onScroll = (e: NativeSyntheticEvent<NativeScrollEvent>) => {
+    const { contentOffset, contentSize, layoutMeasurement } = e.nativeEvent;
+    const y = contentOffset.y;
+    const max = contentSize.height - layoutMeasurement.height;
+    progress.setValue(max > 0 ? Math.min(1, Math.max(0, y / max)) : 0);
+
+    const dy = y - lastScrollY.current;
+    if (y < headerH) setHeaderVisible(true);
+    else if (dy > 6) setHeaderVisible(false);
+    else if (dy < -6) setHeaderVisible(true);
+    lastScrollY.current = y;
+  };
+
+  useEffect(() => {
+    let active = true;
+    setStatus('loading');
+    setVerses([]);
+    setSelected([]);
+    setSheet(null);
+    offsets.current = {};
+    scrolled.current = false;
+    progress.setValue(0);
+    headerY.setValue(0);
+    headerShown.current = true;
+    lastScrollY.current = 0;
+    if (!book || Number.isNaN(chapter)) {
+      setStatus('error');
+      return;
+    }
+    getChapter(translation, bookId, chapter)
+      .then((v) => {
+        if (!active) return;
+        setVerses(v);
+        setStatus('ready');
+        actions.recordRead();
+        if (!targetVerse) {
+          requestAnimationFrame(() => scrollRef.current?.scrollTo({ y: 0, animated: false }));
+        }
+        const next = neighbor(bookId, chapter, 1);
+        if (next) prefetchChapter(translation, next.bookId, next.chapter);
+      })
+      .catch(() => active && setStatus('error'));
+    actions.setLastRead(bookId, chapter);
+    return () => {
+      active = false;
+    };
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [translation, bookId, chapter]);
+
+  useEffect(() => {
+    if (targetVerse && status === 'ready') {
+      setFlash(targetVerse);
+      const t = setTimeout(() => setFlash(null), 2600);
+      return () => clearTimeout(t);
+    }
+  }, [targetVerse, status]);
+
+  const verseText = (v: number) => verses.find((x) => x.verse === v)?.text ?? '';
+  const toggleVerse = (v: number) => {
+    tapLight();
+    setSelected((prev) => (prev.includes(v) ? prev.filter((x) => x !== v) : [...prev, v].sort((a, b) => a - b)));
+  };
+
+  const selectionLabel =
+    selected.length === 0
+      ? ''
+      : selected.length === 1
+        ? formatRef(bookId, chapter, selected[0])
+        : `${book?.name} ${chapter}:${formatVerseRange(selected)}`;
+  const selectedText = () => selected.map((v) => verseText(v)).join(' ');
+
+  const noteVerse = selected.length === 1 ? selected[0] : null;
+  const existingNote =
+    noteVerse != null
+      ? data.notes.find((n) => n.bookId === bookId && n.chapter === chapter && n.verse === noteVerse)
+      : undefined;
+
+  const swatchActive = (c: (typeof HIGHLIGHT_COLORS)[number]) =>
+    selected.length > 0 && selected.every((v) => data.highlights[refKey(bookId, chapter, v)]?.color === c);
+  const applyHighlight = (c: (typeof HIGHLIGHT_COLORS)[number]) => {
+    const turnOff = swatchActive(c);
+    selected.forEach((v) => actions.setHighlight(bookId, chapter, v, turnOff ? null : c));
+  };
+  const clearHighlight = () => selected.forEach((v) => actions.setHighlight(bookId, chapter, v, null));
+
+  const openNote = () => {
+    setNoteText(existingNote?.text ?? '');
+    setSheet('note');
+  };
+  const saveNote = () => {
+    if (noteVerse != null) actions.upsertNote(bookId, chapter, noteVerse, noteText);
+    setSelected([]);
+    setSheet(null);
+  };
+  const addToDeck = (deckId: string) => {
+    const deck = data.decks.find((d) => d.id === deckId);
+    actions.addCard(deckId, selectionLabel, selectedText(), { bookId, chapter, verse: selected[0] });
+    tapSuccess();
+    setSelected([]);
+    setSheet(null);
+    toast(`Added to ${deck?.title ?? 'deck'}`);
+  };
+  const copy = async () => {
+    await Clipboard.setStringAsync(`${selectedText()}\n— ${selectionLabel} (${translation})`);
+    setSelected([]);
+    setSheet(null);
+    toast(selected.length > 1 ? 'Passage copied' : 'Verse copied');
+  };
+  const share = async () => {
+    const text = `${selectedText()}\n— ${selectionLabel} (${translation})`;
+    try {
+      await Share.share({ message: text });
+    } catch {
+      await Clipboard.setStringAsync(text);
+      toast('Copied to clipboard');
+    }
+    setSelected([]);
+    setSheet(null);
+  };
+
+  const go = (n: Neighbor) => {
+    if (!n) return;
+    setSelected([]);
+    setSheet(null);
+    router.replace(`/reader/${n.bookId}/${n.chapter}`);
+  };
+
+  const prev = neighbor(bookId, chapter, -1);
+  const next = neighbor(bookId, chapter, 1);
+
+  return (
+    <View style={[styles.flex, { backgroundColor: theme.background }]}>
+      {status === 'loading' ? (
+        <View style={{ flex: 1, paddingTop: headerH }}>
+          <ReaderSkeleton />
+        </View>
+      ) : status === 'error' ? (
+        <View style={styles.centered}>
+          <ThemedText type="h3">Couldn’t load this chapter</ThemedText>
+          <ThemedText type="small" themeColor="textSecondary" style={{ textAlign: 'center', marginTop: 6 }}>
+            Check your connection and try again.
+          </ThemedText>
+          <Button
+            title="Retry"
+            style={{ marginTop: Spacing.four }}
+            onPress={() => router.replace(`/reader/${bookId}/${chapter}`)}
+          />
+        </View>
+      ) : (
+        <ScrollView
+          ref={scrollRef}
+          onScroll={onScroll}
+          scrollEventThrottle={16}
+          contentContainerStyle={[
+            styles.content,
+            { paddingTop: headerH + Spacing.three },
+            selected.length > 0 && { paddingBottom: 240 },
+          ]}
+          showsVerticalScrollIndicator={false}>
+          <ThemedText style={[styles.chapterTitle, { marginBottom: Spacing.four }]}>
+            {book?.name} {chapter}
+          </ThemedText>
+
+          {verses.map((v) => {
+            const hl = data.highlights[refKey(bookId, chapter, v.verse)];
+            const note = data.notes.find(
+              (n) => n.bookId === bookId && n.chapter === chapter && n.verse === v.verse,
+            );
+            const active = selected.includes(v.verse) || flash === v.verse;
+            return (
+              <View
+                key={v.verse}
+                onLayout={(e) => {
+                  offsets.current[v.verse] = e.nativeEvent.layout.y;
+                  if (targetVerse === v.verse && !scrolled.current) {
+                    scrolled.current = true;
+                    requestAnimationFrame(() =>
+                      scrollRef.current?.scrollTo({
+                        y: Math.max(0, (offsets.current[v.verse] ?? 0) - 90),
+                        animated: true,
+                      }),
+                    );
+                  }
+                }}>
+                <Pressable
+                  onPress={() => toggleVerse(v.verse)}
+                  style={[styles.verseRow, active && { backgroundColor: theme.accentSoft }]}>
+                  <ThemedText type="bodySerif" style={{ fontSize: 18 * scale, lineHeight: 31 * scale }}>
+                    <ThemedText
+                      style={{ fontSize: 11 * scale, lineHeight: 31 * scale, color: theme.textTertiary, fontWeight: '600' }}>
+                      {v.verse}{' '}
+                    </ThemedText>
+                    <ThemedText
+                      style={[
+                        { fontSize: 18 * scale, lineHeight: 31 * scale },
+                        hl && { backgroundColor: highlightBg(hl.color, scheme) },
+                      ]}>
+                      {v.text}
+                    </ThemedText>
+                  </ThemedText>
+                </Pressable>
+                {note ? (
+                  <Pressable
+                    onPress={() => {
+                      setSelected([v.verse]);
+                      setNoteText(note.text);
+                      setSheet('note');
+                    }}
+                    style={[styles.noteBlock, { borderLeftColor: theme.accent, backgroundColor: theme.accentSoft }]}>
+                    <StickyNote size={14} color={theme.accent} style={{ marginTop: 2 }} />
+                    <ThemedText type="caption" themeColor="textSecondary" style={{ flex: 1 }}>
+                      {note.text}
+                    </ThemedText>
+                  </Pressable>
+                ) : null}
+              </View>
+            );
+          })}
+
+          <View style={styles.navRow}>
+            <Button
+              variant="secondary"
+              size="sm"
+              icon={ChevronLeft}
+              title={prev ? formatRef(prev.bookId, prev.chapter) : 'Start'}
+              onPress={() => go(prev)}
+              disabled={!prev}
+            />
+            <Button
+              variant="secondary"
+              size="sm"
+              icon={ChevronRight}
+              title={next ? formatRef(next.bookId, next.chapter) : 'End'}
+              onPress={() => go(next)}
+              disabled={!next}
+            />
+          </View>
+        </ScrollView>
+      )}
+
+      <Animated.View
+        onLayout={(e) => setHeaderH(e.nativeEvent.layout.height)}
+        style={[styles.headerWrap, { backgroundColor: theme.background, transform: [{ translateY: headerY }] }]}>
+        <SafeAreaView edges={['top']}>
+          <View style={styles.header}>
+            <IconButton icon={ChevronLeft} onPress={() => router.back()} accessibilityLabel="Back" />
+            <Pressable
+              onPress={() => setShowChapters(true)}
+              accessibilityLabel="Jump to book or chapter"
+              style={styles.headerTitle}>
+              <ThemedText type="h3" numberOfLines={1}>
+                {formatRef(bookId, chapter)}
+              </ThemedText>
+              <ChevronRight size={15} color={theme.textSecondary} style={{ transform: [{ rotate: '90deg' }] }} />
+            </Pressable>
+            <Pressable
+              onPress={() => setShowTranslation(true)}
+              style={[styles.translationMini, { backgroundColor: theme.backgroundElement }]}>
+              <ThemedText type="small" themeColor="accent" style={{ fontWeight: '600' }}>
+                {translation}
+              </ThemedText>
+            </Pressable>
+            <IconButton icon={TypeIcon} onPress={() => setShowFont(true)} accessibilityLabel="Text size" />
+          </View>
+        </SafeAreaView>
+        {status === 'ready' ? (
+          <View style={[styles.progressTrack, { backgroundColor: theme.border }]}>
+            <Animated.View
+              style={[
+                styles.progressBar,
+                { backgroundColor: theme.accent, transform: [{ scaleX: progress }] },
+              ]}
+            />
+          </View>
+        ) : null}
+      </Animated.View>
+
+      {/* selection action bar (non-modal, so verses stay tappable) */}
+      {selected.length > 0 ? (
+        <View
+          style={[
+            styles.actionBar,
+            { backgroundColor: theme.card, borderTopColor: theme.border, paddingBottom: insets.bottom + Spacing.three },
+          ]}>
+          <View style={styles.actionBarInner}>
+            <View style={styles.barHeader}>
+              <ThemedText type="h3" numberOfLines={1} style={{ flex: 1 }}>
+                {selectionLabel}
+              </ThemedText>
+              <IconButton icon={X} onPress={() => setSelected([])} accessibilityLabel="Clear selection" />
+            </View>
+            <View style={styles.swatches}>
+              {HIGHLIGHT_COLORS.map((c) => (
+                <Pressable
+                  key={c}
+                  onPress={() => applyHighlight(c)}
+                  accessibilityLabel={`Highlight ${c}`}
+                  style={({ pressed }) => [
+                    styles.swatch,
+                    { backgroundColor: Highlights[c].dot },
+                    swatchActive(c) && { borderColor: theme.text, borderWidth: 3 },
+                    pressed && { opacity: 0.7 },
+                  ]}
+                />
+              ))}
+              <Pressable
+                onPress={clearHighlight}
+                accessibilityLabel="Clear highlight"
+                style={[styles.swatch, styles.clearSwatch, { borderColor: theme.border }]}>
+                <X size={18} color={theme.textSecondary} />
+              </Pressable>
+            </View>
+            <View style={styles.actionGrid}>
+              {noteVerse != null ? (
+                <ActionBtn icon={StickyNote} label={existingNote ? 'Edit note' : 'Add note'} onPress={openNote} />
+              ) : null}
+              <ActionBtn icon={GraduationCap} label="Add to deck" onPress={() => setSheet('deck')} />
+              <ActionBtn icon={Copy} label="Copy" onPress={copy} />
+              <ActionBtn icon={Share2} label="Share" onPress={share} />
+            </View>
+          </View>
+        </View>
+      ) : null}
+
+      {/* note editor */}
+      <Sheet
+        visible={sheet === 'note'}
+        onClose={() => setSheet(null)}
+        title={noteVerse != null ? `Note · ${formatRef(bookId, chapter, noteVerse)}` : 'Note'}>
+        <TextField value={noteText} onChangeText={setNoteText} placeholder="Write a personal note…" multiline autoFocus />
+        <View style={{ flexDirection: 'row', gap: Spacing.two }}>
+          {existingNote ? (
+            <Button
+              variant="secondary"
+              title="Delete"
+              onPress={() => {
+                if (existingNote) actions.deleteNote(existingNote.id);
+                setSelected([]);
+                setSheet(null);
+              }}
+            />
+          ) : null}
+          <Button title="Save note" full={!existingNote} style={{ flex: 1 }} onPress={saveNote} />
+        </View>
+      </Sheet>
+
+      <DeckPicker visible={sheet === 'deck'} onClose={() => setSheet(null)} onPicked={addToDeck} />
+
+      <TranslationSheet
+        visible={showTranslation}
+        onClose={() => setShowTranslation(false)}
+        value={translation}
+        onSelect={actions.setTranslation}
+      />
+      <BookNav
+        visible={showChapters}
+        onClose={() => setShowChapters(false)}
+        onPick={(b, c) => go({ bookId: b, chapter: c })}
+      />
+
+      <Sheet visible={showFont} onClose={() => setShowFont(false)} title="Text size">
+        <View style={styles.fontRow}>
+          <Button variant="secondary" title="A−" onPress={() => actions.setFontScale(Math.max(0.85, round1(scale - 0.1)))} />
+          <ThemedText type="h3">{Math.round(scale * 100)}%</ThemedText>
+          <Button variant="secondary" title="A+" onPress={() => actions.setFontScale(Math.min(1.6, round1(scale + 0.1)))} />
+        </View>
+        <ThemedText type="bodySerif" style={{ fontSize: 18 * scale, lineHeight: 30 * scale }}>
+          “For God so loved the world, that he gave his one and only Son…”
+        </ThemedText>
+      </Sheet>
+    </View>
+  );
+}
+
+function ActionBtn({ icon: Icon, label, onPress }: { icon: IconType; label: string; onPress: () => void }) {
+  const theme = useTheme();
+  return (
+    <Pressable onPress={onPress} style={({ pressed }) => [styles.actionBtn, pressed && { opacity: 0.6 }]}>
+      <View style={[styles.actionIcon, { backgroundColor: theme.backgroundElement }]}>
+        <Icon size={20} color={theme.text} />
+      </View>
+      <ThemedText type="caption">{label}</ThemedText>
+    </Pressable>
+  );
+}
+
+const styles = StyleSheet.create({
+  flex: { flex: 1 },
+  headerWrap: { position: 'absolute', top: 0, left: 0, right: 0, zIndex: 10 },
+  progressTrack: { height: 2.5, width: '100%', maxWidth: MaxContentWidth, alignSelf: 'center', overflow: 'hidden' },
+  progressBar: { height: 2.5, width: '100%', transformOrigin: 'left' },
+  chapterTitle: { fontFamily: Fonts.serif, fontSize: 27, lineHeight: 34, fontWeight: '500', letterSpacing: -0.3 },
+  header: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: Spacing.two,
+    paddingHorizontal: Spacing.three,
+    paddingVertical: Spacing.two,
+    width: '100%',
+    maxWidth: MaxContentWidth,
+    alignSelf: 'center',
+  },
+  headerTitle: { flex: 1, flexDirection: 'row', alignItems: 'center', gap: 2 },
+  translationMini: { paddingHorizontal: Spacing.three, height: 34, borderRadius: Radius.pill, alignItems: 'center', justifyContent: 'center' },
+  centered: { flex: 1, alignItems: 'center', justifyContent: 'center', padding: Spacing.five },
+  content: {
+    paddingHorizontal: Spacing.four,
+    paddingTop: Spacing.three,
+    paddingBottom: Spacing.eight,
+    width: '100%',
+    maxWidth: MaxContentWidth,
+    alignSelf: 'center',
+  },
+  verseRow: { paddingVertical: 4, paddingHorizontal: 6, borderRadius: Radius.sm, marginVertical: 1 },
+  noteBlock: {
+    marginLeft: 14,
+    marginTop: 4,
+    marginBottom: 6,
+    paddingVertical: Spacing.two,
+    paddingHorizontal: Spacing.three,
+    borderLeftWidth: 3,
+    borderRadius: Radius.sm,
+    flexDirection: 'row',
+    gap: Spacing.two,
+    alignItems: 'flex-start',
+  },
+  navRow: { flexDirection: 'row', justifyContent: 'space-between', gap: Spacing.three, marginTop: Spacing.six },
+  actionBar: {
+    position: 'absolute',
+    left: 0,
+    right: 0,
+    bottom: 0,
+    borderTopWidth: StyleSheet.hairlineWidth,
+    paddingTop: Spacing.three,
+    alignItems: 'center',
+  },
+  actionBarInner: { width: '100%', maxWidth: MaxContentWidth, paddingHorizontal: Spacing.four, gap: Spacing.three },
+  barHeader: { flexDirection: 'row', alignItems: 'center', gap: Spacing.two },
+  swatches: { flexDirection: 'row', gap: Spacing.three, alignItems: 'center', justifyContent: 'center' },
+  swatch: { width: 38, height: 38, borderRadius: Radius.pill, borderColor: 'transparent', borderWidth: 0, alignItems: 'center', justifyContent: 'center' },
+  clearSwatch: { borderWidth: StyleSheet.hairlineWidth },
+  actionGrid: { flexDirection: 'row', justifyContent: 'space-between' },
+  actionBtn: { alignItems: 'center', gap: Spacing.one, flex: 1 },
+  actionIcon: { width: 50, height: 50, borderRadius: Radius.md, alignItems: 'center', justifyContent: 'center' },
+  fontRow: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between' },
+});

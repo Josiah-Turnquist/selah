@@ -41,3 +41,6 @@ example
 # generated native folders
 /ios
 /android
+
+# local agent tooling (preview config + git worktrees)
+.claude/
