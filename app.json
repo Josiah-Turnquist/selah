@@ -39,11 +39,17 @@
           "image": "./assets/images/splash-icon.png",
           "imageWidth": 170
         }
-      ]
+      ],
+      "./plugins/remove-push-entitlement"
     ],
     "experiments": {
       "typedRoutes": false,
       "reactCompiler": true
+    },
+    "extra": {
+      "eas": {
+        "projectId": "79315a5b-eda2-42e4-9f2b-5c041781d7db"
+      }
     }
   }
 }
