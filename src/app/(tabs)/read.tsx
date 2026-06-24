@@ -13,7 +13,7 @@ import { SkeletonLine } from '@/components/ui/skeleton';
 import { Radius, Spacing } from '@/constants/theme';
 import { BOOKS, type Book } from '@/lib/bible/books';
 import { getVerseText, searchBible, type SearchHit } from '@/lib/bible/bolls';
-import { formatRef } from '@/lib/bible/refs';
+import { formatReadingList, formatRef } from '@/lib/bible/refs';
 import { verseOfDay } from '@/lib/bible/verse-of-day';
 import { currentStreak } from '@/lib/cycle';
 import { planStats } from '@/lib/plans/progress';
@@ -189,8 +189,11 @@ export default function ReadScreen() {
               <ThemedText type="label" themeColor="accent">
                 Today · {planToday.tpl.title}
               </ThemedText>
-              <ThemedText type="h3" style={{ marginTop: 4 }}>
-                Day {planToday.dayNum}: {planToday.readings.map((r) => formatRef(r.bookId, r.chapter)).join(' · ')}
+              <ThemedText type="h2" style={{ marginTop: 6 }}>
+                {formatReadingList(planToday.readings)}
+              </ThemedText>
+              <ThemedText type="caption" themeColor="textSecondary" style={{ marginTop: 4 }}>
+                Day {planToday.dayNum} of {planToday.tpl.durationDays}
               </ThemedText>
             </Card>
           ) : null}

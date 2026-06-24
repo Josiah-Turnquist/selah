@@ -14,7 +14,7 @@ import { useCelebrate } from '@/components/ui/celebrate';
 import { useToast } from '@/components/ui/toast';
 import { Sheet } from '@/components/ui/sheet';
 import { MaxContentWidth, Radius, Spacing } from '@/constants/theme';
-import { formatRef } from '@/lib/bible/refs';
+import { formatReadingList } from '@/lib/bible/refs';
 import { planStats } from '@/lib/plans/progress';
 import { templateById } from '@/lib/plans/templates';
 import { shareLink } from '@/lib/share';
@@ -129,7 +129,7 @@ export default function PlanDetail() {
                   Day {item.day}
                 </ThemedText>
                 <ThemedText type="small" numberOfLines={1}>
-                  {item.readings.map((r) => formatRef(r.bookId, r.chapter)).join(' · ') || '—'}
+                  {formatReadingList(item.readings) || '—'}
                 </ThemedText>
               </Pressable>
               <Pressable
