@@ -112,6 +112,8 @@ export function defaultData(): AppData {
       translation: DEFAULT_TRANSLATION,
       compareTranslation: null,
       readerFontScale: 1,
+      readerWeight: '400',
+      paragraphMode: false,
       displayName: 'You',
       theme: DEFAULT_PALETTE,
       appearance: 'system',

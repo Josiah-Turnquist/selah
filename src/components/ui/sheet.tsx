@@ -1,9 +1,10 @@
 import { useEffect, useRef, useState, type ReactNode } from 'react';
-import { Animated, Easing, KeyboardAvoidingView, Modal, Platform, Pressable, StyleSheet, View } from 'react-native';
+import { Animated, Easing, Modal, Platform, Pressable, StyleSheet, View } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 
 import { ThemedText } from '@/components/themed-text';
 import { MaxContentWidth, Radius, Spacing } from '@/constants/theme';
+import { useKeyboardHeight } from '@/hooks/use-keyboard-height';
 import { useTheme } from '@/hooks/use-theme';
 
 const AnimatedPressable = Animated.createAnimatedComponent(Pressable);
@@ -22,6 +23,7 @@ export function Sheet({
 }) {
   const theme = useTheme();
   const insets = useSafeAreaInsets();
+  const keyboardHeight = useKeyboardHeight();
   const [mounted, setMounted] = useState(visible);
   const progress = useRef(new Animated.Value(0)).current;
 
@@ -53,9 +55,7 @@ export function Sheet({
 
   return (
     <Modal visible transparent animationType="none" statusBarTranslucent onRequestClose={onClose}>
-      <KeyboardAvoidingView
-        behavior={Platform.OS === 'ios' ? 'padding' : undefined}
-        style={styles.root}>
+      <View style={styles.root}>
         <AnimatedPressable
           accessibilityLabel="Dismiss"
           onPress={onClose}
@@ -67,7 +67,10 @@ export function Sheet({
             {
               backgroundColor: theme.card,
               borderColor: theme.border,
-              paddingBottom: insets.bottom + Spacing.four,
+              // Keep the sheet pinned to the screen bottom so its background runs
+              // behind the keyboard (no gap at the rounded keyboard corners), and
+              // pad the content up so the focused input clears the keyboard.
+              paddingBottom: keyboardHeight > 0 ? keyboardHeight + Spacing.four : insets.bottom + Spacing.four,
               opacity: progress,
               transform: [{ translateY }],
             },
@@ -80,7 +83,7 @@ export function Sheet({
           ) : null}
           {children}
         </Animated.View>
-      </KeyboardAvoidingView>
+      </View>
     </Modal>
   );
 }

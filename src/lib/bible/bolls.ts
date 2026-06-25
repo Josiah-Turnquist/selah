@@ -16,6 +16,17 @@ function cacheKey(translation: string, bookId: number, chapter: number): string 
   return `bolls:${translation}:${bookId}:${chapter}`;
 }
 
+/** fetch with an abort timeout so a hung request fails fast instead of loading forever. */
+async function fetchWithTimeout(url: string, ms = 12000): Promise<Response> {
+  const controller = new AbortController();
+  const timer = setTimeout(() => controller.abort(), ms);
+  try {
+    return await fetch(url, { signal: controller.signal });
+  } finally {
+    clearTimeout(timer);
+  }
+}
+
 /**
  * Strip inline markup and normalise whitespace. Strong's-number and footnote
  * markers (`<S>1234</S>`, `<sup>1</sup>`) are removed *with their contents*;
@@ -56,10 +67,17 @@ export async function getChapter(
     // fall through to network
   }
 
-  const res = await fetch(`${BASE}/get-text/${encodeURIComponent(translation)}/${bookId}/${chapter}/`);
+  const url = `${BASE}/get-text/${encodeURIComponent(translation)}/${bookId}/${chapter}/`;
+  let res: Response;
+  try {
+    res = await fetchWithTimeout(url);
+  } catch {
+    res = await fetchWithTimeout(url); // one retry for a transient drop or timeout
+  }
   if (!res.ok) throw new Error(`Couldn't load that chapter (${res.status})`);
-  const json = (await res.json()) as { verse: number; text: string }[];
-  const verses: Verse[] = json
+  const json = (await res.json()) as unknown;
+  if (!Array.isArray(json)) throw new Error("Couldn't load that chapter");
+  const verses: Verse[] = (json as { verse: number; text: string }[])
     .map((v) => ({ verse: v.verse, text: cleanVerseText(v.text) }))
     .filter((v) => v.text.length > 0);
 

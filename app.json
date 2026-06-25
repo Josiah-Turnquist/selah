@@ -4,12 +4,6 @@
     "slug": "selah",
     "owner": "josiahturnq",
     "version": "1.0.0",
-    "runtimeVersion": {
-      "policy": "fingerprint"
-    },
-    "updates": {
-      "url": "https://u.expo.dev/79315a5b-eda2-42e4-9f2b-5c041781d7db"
-    },
     "description": "A simple Bible app: read, plan, pray, and memorize.",
     "primaryColor": "#1B1B1D",
     "orientation": "portrait",
@@ -47,7 +41,7 @@
         }
       ],
       "expo-sharing",
-      "./plugins/with-no-push-entitlement.js"
+      "./plugins/remove-push-entitlement"
     ],
     "experiments": {
       "typedRoutes": false,
@@ -57,6 +51,12 @@
       "eas": {
         "projectId": "79315a5b-eda2-42e4-9f2b-5c041781d7db"
       }
+    },
+    "runtimeVersion": {
+      "policy": "appVersion"
+    },
+    "updates": {
+      "url": "https://u.expo.dev/79315a5b-eda2-42e4-9f2b-5c041781d7db"
     }
   }
 }

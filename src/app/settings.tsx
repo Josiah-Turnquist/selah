@@ -57,7 +57,7 @@ export default function Settings() {
         <IconButton icon={X} onPress={() => router.back()} accessibilityLabel="Close" />
       </View>
 
-      <ScrollView contentContainerStyle={styles.content} showsVerticalScrollIndicator={false}>
+      <ScrollView contentContainerStyle={styles.content} showsVerticalScrollIndicator={false} automaticallyAdjustKeyboardInsets keyboardDismissMode="interactive">
         <Label>Your name</Label>
         <TextField value={data.settings.displayName} onChangeText={actions.setDisplayName} placeholder="Your name" />
         <ThemedText type="caption" themeColor="textTertiary" style={{ marginTop: 6 }}>
@@ -125,10 +125,24 @@ export default function Settings() {
             <ThemedText type="h3">{Math.round(scale * 100)}%</ThemedText>
             <Button variant="secondary" title="A+" onPress={() => actions.setFontScale(Math.min(1.6, round1(scale + 0.1)))} />
           </View>
-          <ThemedText type="bodySerif" style={{ fontSize: 18 * scale, lineHeight: 28 * scale, marginTop: Spacing.three }}>
+          <ThemedText
+            type="bodySerif"
+            style={{ fontSize: 18 * scale, lineHeight: 28 * scale, marginTop: Spacing.three, fontWeight: data.settings.readerWeight }}>
             “Your word is a lamp to my feet, and a light for my path.” — Psalm 119:105
           </ThemedText>
         </Card>
+
+        <Label>Reader weight</Label>
+        <Segmented
+          options={[
+            { label: 'Regular', value: '400' },
+            { label: 'Medium', value: '500' },
+            { label: 'Semibold', value: '600' },
+            { label: 'Bold', value: '700' },
+          ]}
+          value={data.settings.readerWeight}
+          onChange={actions.setReaderWeight}
+        />
 
         <Label>Daily reminder</Label>
         <Card>

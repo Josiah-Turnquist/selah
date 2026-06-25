@@ -65,7 +65,7 @@ export default function Onboarding() {
         </View>
 
         <Animated.View style={[styles.flex, animStyle]}>
-          <ScrollView contentContainerStyle={styles.step} keyboardShouldPersistTaps="handled" showsVerticalScrollIndicator={false}>
+          <ScrollView contentContainerStyle={styles.step} keyboardShouldPersistTaps="handled" automaticallyAdjustKeyboardInsets keyboardDismissMode="interactive" showsVerticalScrollIndicator={false}>
             {step === 0 ? (
               <View style={styles.welcome}>
                 <View style={[styles.mark, { backgroundColor: theme.accentSoft }]}>

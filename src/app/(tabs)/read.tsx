@@ -1,19 +1,16 @@
 import { router } from 'expo-router';
-import { BookOpen, ChevronRight, Flame, NotebookPen, Search, Settings, Share2, X } from 'lucide-react-native';
+import { BookOpen, ChevronDown, Flame, NotebookPen, Settings } from 'lucide-react-native';
 import { useEffect, useMemo, useState, type ReactNode } from 'react';
 import { Pressable, StyleSheet, View } from 'react-native';
 
 import { ChapterPicker } from '@/components/chapter-picker';
-import { ShareVerseModal } from '@/components/share-verse-modal';
 import { ThemedText } from '@/components/themed-text';
 import { TranslationSheet } from '@/components/translation-sheet';
-import { TextField } from '@/components/ui/field';
 import { Card, IconButton } from '@/components/ui/primitives';
 import { Screen, ScreenHeader } from '@/components/ui/screen';
-import { SkeletonLine } from '@/components/ui/skeleton';
 import { Radius, Spacing } from '@/constants/theme';
 import { BOOKS, type Book } from '@/lib/bible/books';
-import { getVerseText, searchBible, type SearchHit } from '@/lib/bible/bolls';
+import { getVerseText } from '@/lib/bible/bolls';
 import { formatReadingList, formatRef } from '@/lib/bible/refs';
 import { verseOfDay } from '@/lib/bible/verse-of-day';
 import { currentStreak } from '@/lib/cycle';
@@ -33,46 +30,22 @@ export default function ReadScreen() {
   const translation = data.settings.translation;
   const streak = currentStreak(data.readDays, 'daily');
 
-  const [query, setQuery] = useState('');
-  const [results, setResults] = useState<SearchHit[]>([]);
-  const [searching, setSearching] = useState(false);
   const [showTranslation, setShowTranslation] = useState(false);
   const [pickerBook, setPickerBook] = useState<Book | null>(null);
 
-  useEffect(() => {
-    const q = query.trim();
-    if (q.length < 2) {
-      setResults([]);
-      setSearching(false);
-      return;
-    }
-    setSearching(true);
-    let active = true;
-    const timer = setTimeout(async () => {
-      const hits = await searchBible(translation, q);
-      if (active) {
-        setResults(hits);
-        setSearching(false);
-      }
-    }, 350);
-    return () => {
-      active = false;
-      clearTimeout(timer);
-    };
-  }, [query, translation]);
-
   const lastRead = data.lastRead;
-  const activePlan = data.plans[0];
-  const planToday = useMemo(() => {
-    if (!activePlan) return null;
-    const tpl = templateById(activePlan.templateId);
-    if (!tpl) return null;
-    const stats = planStats(activePlan);
-    const dayNum = Math.min(tpl.days.length, stats.nextDay);
-    return { tpl, dayNum, readings: tpl.days[dayNum - 1] ?? [] };
-  }, [activePlan]);
-
-  const isSearching = query.trim().length >= 2;
+  const todayPlans = useMemo(
+    () =>
+      data.plans.flatMap((plan) => {
+        const tpl = templateById(plan.templateId);
+        if (!tpl) return [];
+        const stats = planStats(plan);
+        const dayNum = Math.min(tpl.days.length, stats.nextDay);
+        const readings = tpl.days[dayNum - 1] ?? [];
+        return readings.length > 0 ? [{ plan, tpl, dayNum, readings }] : [];
+      }),
+    [data.plans],
+  );
 
   return (
     <Screen scroll tab>
@@ -95,116 +68,51 @@ export default function ReadScreen() {
         </View>
       ) : null}
 
-      <Pressable
-        onPress={() => setShowTranslation(true)}
-        accessibilityLabel="Change translation"
-        style={({ pressed }) => [
-          styles.translation,
-          { backgroundColor: theme.backgroundElement },
-          pressed && { opacity: 0.7 },
-        ]}>
-        <ThemedText type="label" themeColor="textSecondary">
-          Translation
-        </ThemedText>
-        <View style={styles.translationValue}>
-          <ThemedText type="h3" themeColor="accent">
-            {translation}
-          </ThemedText>
-          <ChevronRight size={16} color={theme.textSecondary} />
-        </View>
-      </Pressable>
+      <VerseOfDay translation={translation} onChangeTranslation={() => setShowTranslation(true)} />
 
-      <View style={styles.searchWrap}>
-        <Search size={18} color={theme.textTertiary} style={styles.searchIcon} />
-        <TextField
-          value={query}
-          onChangeText={setQuery}
-          placeholder="Search the Bible…"
-          returnKeyType="search"
-          autoCapitalize="none"
-          autoCorrect={false}
-          style={{ paddingLeft: 42, paddingRight: 42 }}
-        />
-        {query.length > 0 ? (
-          <Pressable onPress={() => setQuery('')} hitSlop={8} accessibilityLabel="Clear search" style={styles.searchClear}>
-            <X size={18} color={theme.textTertiary} />
-          </Pressable>
-        ) : null}
-      </View>
-
-      {isSearching ? (
-        <Card style={{ marginTop: Spacing.three }}>
-          {searching ? (
-            <View style={{ gap: 12, paddingVertical: Spacing.two }}>
-              {[0, 1, 2].map((i) => (
-                <View key={i} style={{ gap: 6 }}>
-                  <SkeletonLine width="38%" height={11} />
-                  <SkeletonLine width="100%" height={14} />
-                </View>
-              ))}
-            </View>
-          ) : results.length === 0 ? (
-            <ThemedText type="small" themeColor="textSecondary" style={{ paddingVertical: Spacing.two }}>
-              No verses found for “{query.trim()}”.
+      <SectionLabel>Continue</SectionLabel>
+      <Card onPress={() => openReader(lastRead?.bookId ?? 43, lastRead?.chapter ?? 1)}>
+        <View style={styles.continue}>
+          <View style={{ flex: 1 }}>
+            <ThemedText type="caption" themeColor="textSecondary">
+              {lastRead ? 'Pick up where you left off' : 'A good place to begin'}
             </ThemedText>
-          ) : (
-            results.slice(0, 40).map((h, i) => (
-              <Pressable
-                key={`${h.bookId}.${h.chapter}.${h.verse}.${i}`}
-                onPress={() => openReader(h.bookId, h.chapter, h.verse)}
-                style={({ pressed }) => [
-                  styles.result,
-                  i > 0 && { borderTopColor: theme.border, borderTopWidth: StyleSheet.hairlineWidth },
-                  pressed && { opacity: 0.6 },
-                ]}>
-                <ThemedText type="caption" themeColor="accent">
-                  {formatRef(h.bookId, h.chapter, h.verse)}
-                </ThemedText>
-                <ThemedText type="small" numberOfLines={2}>
-                  {h.text}
-                </ThemedText>
-              </Pressable>
-            ))
-          )}
-        </Card>
-      ) : (
-        <>
-          <VerseOfDayCard translation={translation} />
-          <SectionLabel>Continue</SectionLabel>
-          <Card onPress={() => openReader(lastRead?.bookId ?? 43, lastRead?.chapter ?? 1)}>
-            <View style={styles.continue}>
-              <View style={{ flex: 1 }}>
-                <ThemedText type="caption" themeColor="textSecondary">
-                  {lastRead ? 'Pick up where you left off' : 'A good place to begin'}
-                </ThemedText>
-                <ThemedText type="h2">{formatRef(lastRead?.bookId ?? 43, lastRead?.chapter ?? 1)}</ThemedText>
-              </View>
-              <View style={[styles.roundIcon, { backgroundColor: theme.accentSoft }]}>
-                <BookOpen size={22} color={theme.accent} />
-              </View>
-            </View>
-          </Card>
+            <ThemedText type="h2">{formatRef(lastRead?.bookId ?? 43, lastRead?.chapter ?? 1)}</ThemedText>
+          </View>
+          <View style={[styles.roundIcon, { backgroundColor: theme.accentSoft }]}>
+            <BookOpen size={22} color={theme.accent} />
+          </View>
+        </View>
+      </Card>
 
-          {planToday && planToday.readings.length > 0 ? (
-            <Card style={{ marginTop: Spacing.three }} onPress={() => router.push(`/plan/${activePlan.id}`)}>
-              <ThemedText type="label" themeColor="accent">
-                Today · {planToday.tpl.title}
-              </ThemedText>
-              <ThemedText type="h2" style={{ marginTop: 6 }}>
-                {formatReadingList(planToday.readings)}
-              </ThemedText>
-              <ThemedText type="caption" themeColor="textSecondary" style={{ marginTop: 4 }}>
-                Day {planToday.dayNum} of {planToday.tpl.durationDays}
+      {todayPlans.length > 0 ? (
+        <>
+          <SectionLabel>Today</SectionLabel>
+          {todayPlans.map((item, i) => (
+            <Card
+              key={item.plan.id}
+              style={i > 0 ? { marginTop: Spacing.two } : undefined}
+              onPress={() => router.push(`/plan/${item.plan.id}`)}>
+              <View style={styles.planHeader}>
+                <ThemedText type="label" themeColor="accent">
+                  {item.tpl.title}
+                </ThemedText>
+                <ThemedText type="caption" themeColor="textSecondary">
+                  Day {item.dayNum} of {item.tpl.durationDays}
+                </ThemedText>
+              </View>
+              <ThemedText type="h3" style={{ marginTop: 6 }}>
+                {formatReadingList(item.readings)}
               </ThemedText>
             </Card>
-          ) : null}
-
-          <SectionLabel>Old Testament</SectionLabel>
-          <BookGrid books={BOOKS.filter((b) => b.testament === 'OT')} onPick={setPickerBook} />
-          <SectionLabel>New Testament</SectionLabel>
-          <BookGrid books={BOOKS.filter((b) => b.testament === 'NT')} onPick={setPickerBook} />
+          ))}
         </>
-      )}
+      ) : null}
+
+      <SectionLabel>Old Testament</SectionLabel>
+      <BookGrid books={BOOKS.filter((b) => b.testament === 'OT')} onPick={setPickerBook} />
+      <SectionLabel>New Testament</SectionLabel>
+      <BookGrid books={BOOKS.filter((b) => b.testament === 'NT')} onPick={setPickerBook} />
 
       <TranslationSheet
         visible={showTranslation}
@@ -222,12 +130,10 @@ export default function ReadScreen() {
   );
 }
 
-function VerseOfDayCard({ translation }: { translation: string }) {
+function VerseOfDay({ translation, onChangeTranslation }: { translation: string; onChangeTranslation: () => void }) {
   const theme = useTheme();
   const ref = useMemo(() => verseOfDay(), []);
   const [text, setText] = useState<string | null>(null);
-  const [showShare, setShowShare] = useState(false);
-  const reference = formatRef(ref.bookId, ref.chapter, ref.verse);
 
   useEffect(() => {
     let active = true;
@@ -241,42 +147,32 @@ function VerseOfDayCard({ translation }: { translation: string }) {
   }, [translation, ref]);
 
   return (
-    <Card style={{ marginBottom: Spacing.three }}>
-      <View style={styles.votdHeader}>
-        <ThemedText type="label" themeColor="accent">
-          Verse of the day
+    <View style={styles.votd}>
+      <ThemedText type="label" themeColor="accent">
+        Verse of the day
+      </ThemedText>
+      <ThemedText
+        type="bodySerif"
+        themeColor={text ? 'text' : 'textTertiary'}
+        style={{ marginTop: Spacing.two }}>
+        {text === null ? 'Loading…' : text}
+      </ThemedText>
+      <View style={styles.votdFooter}>
+        <ThemedText type="caption" themeColor="textSecondary">
+          {formatRef(ref.bookId, ref.chapter, ref.verse)}
         </ThemedText>
-        {text ? (
-          <Pressable
-            onPress={() => setShowShare(true)}
-            hitSlop={10}
-            accessibilityLabel="Share this verse"
-            style={({ pressed }) => pressed && { opacity: 0.5 }}>
-            <Share2 size={17} color={theme.textSecondary} />
-          </Pressable>
-        ) : null}
+        <Pressable
+          onPress={onChangeTranslation}
+          hitSlop={10}
+          accessibilityLabel={`Translation: ${translation}. Tap to change.`}
+          style={({ pressed }) => [styles.translationToggle, pressed && { opacity: 0.45 }]}>
+          <ThemedText type="caption" themeColor="textTertiary">
+            {translation}
+          </ThemedText>
+          <ChevronDown size={12} color={theme.textTertiary} />
+        </Pressable>
       </View>
-      <Pressable
-        onPress={() => openReader(ref.bookId, ref.chapter, ref.verse)}
-        accessibilityLabel="Read this verse"
-        style={({ pressed }) => pressed && { opacity: 0.6 }}>
-        <ThemedText type="bodySerif" themeColor={text ? 'text' : 'textTertiary'}>
-          {text === null ? 'Loading…' : text || 'Tap to read'}
-        </ThemedText>
-        <ThemedText type="caption" themeColor="textSecondary" style={{ marginTop: Spacing.two }}>
-          {reference}
-        </ThemedText>
-      </Pressable>
-      {text ? (
-        <ShareVerseModal
-          visible={showShare}
-          onClose={() => setShowShare(false)}
-          text={text}
-          reference={reference}
-          translation={translation}
-        />
-      ) : null}
-    </Card>
+    </View>
   );
 }
 
@@ -310,22 +206,12 @@ function BookGrid({ books, onPick }: { books: Book[]; onPick: (book: Book) => vo
 }
 
 const styles = StyleSheet.create({
-  translation: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    justifyContent: 'space-between',
-    paddingHorizontal: Spacing.four,
-    paddingVertical: Spacing.three,
-    borderRadius: Radius.md,
-  },
-  translationValue: { flexDirection: 'row', alignItems: 'center', gap: 4 },
-  searchWrap: { marginTop: Spacing.three, justifyContent: 'center' },
-  searchIcon: { position: 'absolute', left: 14, zIndex: 1 },
-  searchClear: { position: 'absolute', right: 14, zIndex: 1 },
+  votd: { marginTop: Spacing.two, marginBottom: Spacing.three },
+  votdFooter: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', marginTop: Spacing.two },
+  translationToggle: { flexDirection: 'row', alignItems: 'center', gap: 3 },
   streak: { flexDirection: 'row', alignItems: 'center', gap: 6, marginBottom: Spacing.three },
-  votdHeader: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', marginBottom: Spacing.two },
-  result: { gap: 3, paddingVertical: Spacing.three },
   continue: { flexDirection: 'row', alignItems: 'center', gap: Spacing.three },
+  planHeader: { flexDirection: 'row', alignItems: 'baseline', justifyContent: 'space-between', gap: Spacing.two },
   roundIcon: { width: 46, height: 46, borderRadius: Radius.pill, alignItems: 'center', justifyContent: 'center' },
   sectionLabel: { marginTop: Spacing.five, marginBottom: Spacing.two },
   bookGrid: { flexDirection: 'row', flexWrap: 'wrap', gap: Spacing.two },

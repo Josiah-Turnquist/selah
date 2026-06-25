@@ -10,7 +10,7 @@ import {
   Type as TypeIcon,
   X,
 } from 'lucide-react-native';
-import { useEffect, useRef, useState } from 'react';
+import { useEffect, useMemo, useRef, useState } from 'react';
 import {
   Animated,
   Easing,
@@ -32,6 +32,7 @@ import { TranslationSheet } from '@/components/translation-sheet';
 import { TextField } from '@/components/ui/field';
 import { Button, IconButton, type IconType } from '@/components/ui/primitives';
 import { ReaderSkeleton } from '@/components/ui/skeleton';
+import { Segmented } from '@/components/ui/segmented';
 import { Sheet } from '@/components/ui/sheet';
 import { useToast } from '@/components/ui/toast';
 import {
@@ -49,6 +50,7 @@ import { formatRef, formatVerseRange, refKey } from '@/lib/bible/refs';
 import { useColorScheme } from '@/hooks/use-color-scheme';
 import { useTheme } from '@/hooks/use-theme';
 import { useActions, useData } from '@/lib/store/store';
+import type { Note } from '@/lib/store/types';
 import { tapLight, tapSuccess } from '@/lib/util/haptics';
 
 type Neighbor = { bookId: number; chapter: number } | null;
@@ -70,6 +72,23 @@ function neighbor(bookId: number, chapter: number, dir: 1 | -1): Neighbor {
 const round1 = (n: number) => Math.round(n * 10) / 10;
 const useNative = Platform.OS !== 'web';
 
+// Group verses into flowing runs, breaking after any verse that has a note so
+// the note can render between paragraphs.
+function buildSegments(verses: Verse[], getNote: (verse: number) => Note | undefined) {
+  const segments: { verses: Verse[]; note?: Note }[] = [];
+  let run: Verse[] = [];
+  for (const v of verses) {
+    run.push(v);
+    const note = getNote(v.verse);
+    if (note) {
+      segments.push({ verses: run, note });
+      run = [];
+    }
+  }
+  if (run.length) segments.push({ verses: run });
+  return segments;
+}
+
 export default function ReaderScreen() {
   const params = useLocalSearchParams<{ bookId: string; chapter: string; v?: string }>();
   const bookId = parseInt(params.bookId, 10);
@@ -88,6 +107,8 @@ export default function ReaderScreen() {
       ? data.settings.compareTranslation
       : null;
   const scale = data.settings.readerFontScale;
+  const weight = data.settings.readerWeight;
+  const flow = data.settings.paragraphMode && !compareTranslation;
   const book = bookById(bookId);
 
   const [verses, setVerses] = useState<Verse[]>([]);
@@ -210,11 +231,16 @@ export default function ReaderScreen() {
         : `${book?.name} ${chapter}:${formatVerseRange(selected)}`;
   const selectedText = () => selected.map((v) => verseText(v)).join(' ');
 
+  const chapterNotes = useMemo(() => {
+    const map = new Map<number, Note>();
+    for (const n of data.notes) {
+      if (n.bookId === bookId && n.chapter === chapter) map.set(n.verse, n);
+    }
+    return map;
+  }, [data.notes, bookId, chapter]);
+
   const noteVerse = selected.length === 1 ? selected[0] : null;
-  const existingNote =
-    noteVerse != null
-      ? data.notes.find((n) => n.bookId === bookId && n.chapter === chapter && n.verse === noteVerse)
-      : undefined;
+  const existingNote = noteVerse != null ? chapterNotes.get(noteVerse) : undefined;
 
   const swatchActive = (c: (typeof HIGHLIGHT_COLORS)[number]) =>
     selected.length > 0 && selected.every((v) => data.highlights[refKey(bookId, chapter, v)]?.color === c);
@@ -302,11 +328,57 @@ export default function ReaderScreen() {
             {book?.name} {chapter}
           </ThemedText>
 
-          {verses.map((v) => {
+          {flow ? (
+            buildSegments(verses, (verse) => chapterNotes.get(verse)).map((seg, si) => {
+              const segNote = seg.note;
+              return (
+                <View key={`seg-${si}`} style={{ marginBottom: Spacing.three }}>
+                  <ThemedText type="bodySerif" style={{ fontSize: 18 * scale, lineHeight: 31 * scale, fontWeight: weight, paddingHorizontal: 6 }}>
+                    {seg.verses.map((fv) => {
+                      const fhl = data.highlights[refKey(bookId, chapter, fv.verse)];
+                      const factive = selected.includes(fv.verse) || flash === fv.verse;
+                      return (
+                        <ThemedText
+                          key={fv.verse}
+                          onPress={() => toggleVerse(fv.verse)}
+                          style={factive ? { backgroundColor: theme.accentSoft } : undefined}>
+                          <ThemedText
+                            style={{ fontSize: 11 * scale, lineHeight: 31 * scale, color: theme.textTertiary, fontWeight: '600' }}>
+                            {fv.verse}{' '}
+                          </ThemedText>
+                          <ThemedText
+                            style={[
+                              { fontSize: 18 * scale, lineHeight: 31 * scale, fontWeight: weight },
+                              fhl && { backgroundColor: highlightBg(fhl.color, scheme) },
+                            ]}>
+                            {fv.text}
+                          </ThemedText>
+                          {'  '}
+                        </ThemedText>
+                      );
+                    })}
+                  </ThemedText>
+                  {segNote ? (
+                    <Pressable
+                      onPress={() => {
+                        setSelected([segNote.verse]);
+                        setNoteText(segNote.text);
+                        setSheet('note');
+                      }}
+                      style={[styles.noteBlock, { borderLeftColor: theme.accent, backgroundColor: theme.accentSoft }]}>
+                      <StickyNote size={14} color={theme.accent} style={{ marginTop: 2 }} />
+                      <ThemedText type="caption" themeColor="textSecondary" style={{ flex: 1 }}>
+                        {segNote.text}
+                      </ThemedText>
+                    </Pressable>
+                  ) : null}
+                </View>
+              );
+            })
+          ) : (
+            verses.map((v) => {
             const hl = data.highlights[refKey(bookId, chapter, v.verse)];
-            const note = data.notes.find(
-              (n) => n.bookId === bookId && n.chapter === chapter && n.verse === v.verse,
-            );
+            const note = chapterNotes.get(v.verse);
             const active = selected.includes(v.verse) || flash === v.verse;
             return (
               <View
@@ -333,7 +405,7 @@ export default function ReaderScreen() {
                     </ThemedText>
                     <ThemedText
                       style={[
-                        { fontSize: 18 * scale, lineHeight: 31 * scale },
+                        { fontSize: 18 * scale, lineHeight: 31 * scale, fontWeight: weight },
                         hl && { backgroundColor: highlightBg(hl.color, scheme) },
                       ]}>
                       {v.text}
@@ -371,7 +443,8 @@ export default function ReaderScreen() {
                 ) : null}
               </View>
             );
-          })}
+            })
+          )}
 
           <View style={styles.navRow}>
             <Button
@@ -517,14 +590,27 @@ export default function ReaderScreen() {
       />
 
       <Sheet visible={showFont} onClose={() => setShowFont(false)} title="Text size">
+        <ThemedText type="bodySerif" style={{ fontSize: 18 * scale, lineHeight: 30 * scale, fontWeight: weight }}>
+          “For God so loved the world, that he gave his one and only Son…”
+        </ThemedText>
         <View style={styles.fontRow}>
           <Button variant="secondary" title="A−" onPress={() => actions.setFontScale(Math.max(0.85, round1(scale - 0.1)))} />
           <ThemedText type="h3">{Math.round(scale * 100)}%</ThemedText>
           <Button variant="secondary" title="A+" onPress={() => actions.setFontScale(Math.min(1.6, round1(scale + 0.1)))} />
         </View>
-        <ThemedText type="bodySerif" style={{ fontSize: 18 * scale, lineHeight: 30 * scale }}>
-          “For God so loved the world, that he gave his one and only Son…”
-        </ThemedText>
+        <Segmented
+          options={[
+            { label: 'Verse lines', value: 'verses' },
+            { label: 'Paragraph', value: 'paragraph' },
+          ]}
+          value={data.settings.paragraphMode ? 'paragraph' : 'verses'}
+          onChange={(v) => actions.setParagraphMode(v === 'paragraph')}
+        />
+        {compareTranslation ? (
+          <ThemedText type="caption" themeColor="textTertiary">
+            Paragraph layout pauses while comparing translations.
+          </ThemedText>
+        ) : null}
       </Sheet>
     </View>
   );

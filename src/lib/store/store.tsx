@@ -29,6 +29,7 @@ import {
   type Deck,
   type DeckKind,
   type PrayerList,
+  type ReaderWeight,
 } from '@/lib/store/types';
 import { localDayKey } from '@/lib/util/date';
 import { uid } from '@/lib/util/id';
@@ -40,6 +41,8 @@ export type Actions = {
   setTranslation: (short: string) => void;
   setCompareTranslation: (short: string | null) => void;
   setFontScale: (scale: number) => void;
+  setReaderWeight: (weight: ReaderWeight) => void;
+  setParagraphMode: (on: boolean) => void;
   setDisplayName: (name: string) => void;
   setPalette: (id: PaletteId) => void;
   setAppearance: (appearance: Appearance) => void;
@@ -133,6 +136,10 @@ export function StoreProvider({ children }: { children: ReactNode }) {
         update((p) => ({ ...p, settings: { ...p.settings, compareTranslation } })),
       setFontScale: (readerFontScale) =>
         update((p) => ({ ...p, settings: { ...p.settings, readerFontScale } })),
+      setReaderWeight: (readerWeight) =>
+        update((p) => ({ ...p, settings: { ...p.settings, readerWeight } })),
+      setParagraphMode: (paragraphMode) =>
+        update((p) => ({ ...p, settings: { ...p.settings, paragraphMode } })),
       setDisplayName: (displayName) =>
         update((p) => ({ ...p, settings: { ...p.settings, displayName } })),
       setPalette: (theme) => update((p) => ({ ...p, settings: { ...p.settings, theme } })),
