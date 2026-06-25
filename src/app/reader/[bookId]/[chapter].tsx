@@ -330,7 +330,7 @@ export default function ReaderScreen() {
               const segNote = seg.note;
               return (
                 <View key={`seg-${si}`} style={{ marginBottom: Spacing.three }}>
-                  <ThemedText type="bodySerif" style={{ fontSize: 18 * scale, lineHeight: 31 * scale, fontWeight: weight }}>
+                  <ThemedText type="bodySerif" style={{ fontSize: 18 * scale, lineHeight: 31 * scale, fontWeight: weight, paddingHorizontal: 6 }}>
                     {seg.verses.map((fv) => {
                       const fhl = data.highlights[refKey(bookId, chapter, fv.verse)];
                       const factive = selected.includes(fv.verse) || flash === fv.verse;
