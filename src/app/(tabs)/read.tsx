@@ -11,7 +11,7 @@ import { Screen, ScreenHeader } from '@/components/ui/screen';
 import { Radius, Spacing } from '@/constants/theme';
 import { BOOKS, type Book } from '@/lib/bible/books';
 import { getVerseText } from '@/lib/bible/bolls';
-import { formatRef } from '@/lib/bible/refs';
+import { formatReadingList, formatRef } from '@/lib/bible/refs';
 import { verseOfDay } from '@/lib/bible/verse-of-day';
 import { currentStreak } from '@/lib/cycle';
 import { planStats } from '@/lib/plans/progress';
@@ -34,15 +34,18 @@ export default function ReadScreen() {
   const [pickerBook, setPickerBook] = useState<Book | null>(null);
 
   const lastRead = data.lastRead;
-  const activePlan = data.plans[0];
-  const planToday = useMemo(() => {
-    if (!activePlan) return null;
-    const tpl = templateById(activePlan.templateId);
-    if (!tpl) return null;
-    const stats = planStats(activePlan);
-    const dayNum = Math.min(tpl.days.length, stats.nextDay);
-    return { tpl, dayNum, readings: tpl.days[dayNum - 1] ?? [] };
-  }, [activePlan]);
+  const todayPlans = useMemo(
+    () =>
+      data.plans.flatMap((plan) => {
+        const tpl = templateById(plan.templateId);
+        if (!tpl) return [];
+        const stats = planStats(plan);
+        const dayNum = Math.min(tpl.days.length, stats.nextDay);
+        const readings = tpl.days[dayNum - 1] ?? [];
+        return readings.length > 0 ? [{ plan, tpl, dayNum, readings }] : [];
+      }),
+    [data.plans],
+  );
 
   return (
     <Screen scroll tab>
@@ -82,15 +85,28 @@ export default function ReadScreen() {
         </View>
       </Card>
 
-      {planToday && planToday.readings.length > 0 ? (
-        <Card style={{ marginTop: Spacing.three }} onPress={() => router.push(`/plan/${activePlan.id}`)}>
-          <ThemedText type="label" themeColor="accent">
-            Today · {planToday.tpl.title}
-          </ThemedText>
-          <ThemedText type="h3" style={{ marginTop: 4 }}>
-            Day {planToday.dayNum}: {planToday.readings.map((r) => formatRef(r.bookId, r.chapter)).join(' · ')}
-          </ThemedText>
-        </Card>
+      {todayPlans.length > 0 ? (
+        <>
+          <SectionLabel>Today</SectionLabel>
+          {todayPlans.map((item, i) => (
+            <Card
+              key={item.plan.id}
+              style={i > 0 ? { marginTop: Spacing.two } : undefined}
+              onPress={() => router.push(`/plan/${item.plan.id}`)}>
+              <View style={styles.planHeader}>
+                <ThemedText type="label" themeColor="accent">
+                  {item.tpl.title}
+                </ThemedText>
+                <ThemedText type="caption" themeColor="textSecondary">
+                  Day {item.dayNum} of {item.tpl.durationDays}
+                </ThemedText>
+              </View>
+              <ThemedText type="h3" style={{ marginTop: 6 }}>
+                {formatReadingList(item.readings)}
+              </ThemedText>
+            </Card>
+          ))}
+        </>
       ) : null}
 
       <SectionLabel>Old Testament</SectionLabel>
@@ -195,6 +211,7 @@ const styles = StyleSheet.create({
   translationToggle: { flexDirection: 'row', alignItems: 'center', gap: 3 },
   streak: { flexDirection: 'row', alignItems: 'center', gap: 6, marginBottom: Spacing.three },
   continue: { flexDirection: 'row', alignItems: 'center', gap: Spacing.three },
+  planHeader: { flexDirection: 'row', alignItems: 'baseline', justifyContent: 'space-between', gap: Spacing.two },
   roundIcon: { width: 46, height: 46, borderRadius: Radius.pill, alignItems: 'center', justifyContent: 'center' },
   sectionLabel: { marginTop: Spacing.five, marginBottom: Spacing.two },
   bookGrid: { flexDirection: 'row', flexWrap: 'wrap', gap: Spacing.two },
