@@ -125,10 +125,24 @@ export default function Settings() {
             <ThemedText type="h3">{Math.round(scale * 100)}%</ThemedText>
             <Button variant="secondary" title="A+" onPress={() => actions.setFontScale(Math.min(1.6, round1(scale + 0.1)))} />
           </View>
-          <ThemedText type="bodySerif" style={{ fontSize: 18 * scale, lineHeight: 28 * scale, marginTop: Spacing.three }}>
+          <ThemedText
+            type="bodySerif"
+            style={{ fontSize: 18 * scale, lineHeight: 28 * scale, marginTop: Spacing.three, fontWeight: data.settings.readerWeight }}>
             “Your word is a lamp to my feet, and a light for my path.” — Psalm 119:105
           </ThemedText>
         </Card>
+
+        <Label>Reader weight</Label>
+        <Segmented
+          options={[
+            { label: 'Light', value: '300' },
+            { label: 'Regular', value: '400' },
+            { label: 'Medium', value: '500' },
+            { label: 'Bold', value: '600' },
+          ]}
+          value={data.settings.readerWeight}
+          onChange={actions.setReaderWeight}
+        />
 
         <Label>Daily reminder</Label>
         <Card>

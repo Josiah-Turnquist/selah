@@ -3,10 +3,14 @@ import type { Cycle } from '@/lib/cycle';
 
 export type { Cycle };
 
+export type ReaderWeight = '300' | '400' | '500' | '600';
+
 export type Settings = {
   translation: string;
   compareTranslation: string | null; // second translation shown beneath each verse, or null
   readerFontScale: number; // 0.85 – 1.5
+  readerWeight: ReaderWeight; // weight of the scripture text
+  paragraphMode: boolean; // flow verses as a paragraph instead of one per line
   displayName: string;
   theme: PaletteId;
   appearance: Appearance;
