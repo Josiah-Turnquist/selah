@@ -589,6 +589,9 @@ export default function ReaderScreen() {
       />
 
       <Sheet visible={showFont} onClose={() => setShowFont(false)} title="Text size">
+        <ThemedText type="bodySerif" style={{ fontSize: 18 * scale, lineHeight: 30 * scale, fontWeight: weight }}>
+          “For God so loved the world, that he gave his one and only Son…”
+        </ThemedText>
         <View style={styles.fontRow}>
           <Button variant="secondary" title="A−" onPress={() => actions.setFontScale(Math.max(0.85, round1(scale - 0.1)))} />
           <ThemedText type="h3">{Math.round(scale * 100)}%</ThemedText>
@@ -607,9 +610,6 @@ export default function ReaderScreen() {
             Paragraph layout pauses while comparing translations.
           </ThemedText>
         ) : null}
-        <ThemedText type="bodySerif" style={{ fontSize: 18 * scale, lineHeight: 30 * scale, fontWeight: weight }}>
-          “For God so loved the world, that he gave his one and only Son…”
-        </ThemedText>
       </Sheet>
     </View>
   );
