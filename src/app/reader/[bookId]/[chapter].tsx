@@ -343,7 +343,11 @@ export default function ReaderScreen() {
                             style={{ fontSize: 11 * scale, lineHeight: 31 * scale, color: theme.textTertiary, fontWeight: '600' }}>
                             {fv.verse}{' '}
                           </ThemedText>
-                          <ThemedText style={fhl ? { backgroundColor: highlightBg(fhl.color, scheme) } : undefined}>
+                          <ThemedText
+                            style={[
+                              { fontSize: 18 * scale, lineHeight: 31 * scale, fontWeight: weight },
+                              fhl && { backgroundColor: highlightBg(fhl.color, scheme) },
+                            ]}>
                             {fv.text}
                           </ThemedText>
                           {'  '}
