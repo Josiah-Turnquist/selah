@@ -5,6 +5,7 @@ export type { Cycle };
 
 export type Settings = {
   translation: string;
+  compareTranslation: string | null; // second translation shown beneath each verse, or null
   readerFontScale: number; // 0.85 – 1.5
   displayName: string;
   theme: PaletteId;

@@ -23,6 +23,32 @@ export function formatRef(bookId: number, chapter: number, verse?: number): stri
   return verse == null ? base : `${base}:${verse}`;
 }
 
+/**
+ * Compact a day's chapter readings into a readable label, collapsing consecutive
+ * chapters in the same book into ranges:
+ *   [Gen 1, Gen 2, Gen 3]        -> "Genesis 1–3"
+ *   [Gen 49, Gen 50, Exo 1]      -> "Genesis 49–50 · Exodus 1"
+ *   [Psalm 30, Proverbs 30]      -> "Psalms 30 · Proverbs 30"
+ */
+export function formatReadingList(readings: { bookId: number; chapter: number }[]): string {
+  const parts: string[] = [];
+  let i = 0;
+  while (i < readings.length) {
+    const { bookId } = readings[i];
+    const start = readings[i].chapter;
+    let end = start;
+    let j = i + 1;
+    while (j < readings.length && readings[j].bookId === bookId && readings[j].chapter === end + 1) {
+      end = readings[j].chapter;
+      j++;
+    }
+    const name = bookName(bookId);
+    parts.push(start === end ? `${name} ${start}` : `${name} ${start}–${end}`);
+    i = j;
+  }
+  return parts.join(' · ');
+}
+
 /** Compress a sorted verse list into a range label, e.g. [1,2,3,5] -> "1-3, 5". */
 export function formatVerseRange(verses: number[]): string {
   if (verses.length === 0) return '';

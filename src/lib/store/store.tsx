@@ -38,6 +38,7 @@ const STORAGE_KEY = 'selah:data:v1';
 export type Actions = {
   // settings + reading position
   setTranslation: (short: string) => void;
+  setCompareTranslation: (short: string | null) => void;
   setFontScale: (scale: number) => void;
   setDisplayName: (name: string) => void;
   setPalette: (id: PaletteId) => void;
@@ -128,6 +129,8 @@ export function StoreProvider({ children }: { children: ReactNode }) {
     return {
       setTranslation: (translation) =>
         update((p) => ({ ...p, settings: { ...p.settings, translation } })),
+      setCompareTranslation: (compareTranslation) =>
+        update((p) => ({ ...p, settings: { ...p.settings, compareTranslation } })),
       setFontScale: (readerFontScale) =>
         update((p) => ({ ...p, settings: { ...p.settings, readerFontScale } })),
       setDisplayName: (displayName) =>
