@@ -135,10 +135,10 @@ export default function Settings() {
         <Label>Reader weight</Label>
         <Segmented
           options={[
-            { label: 'Light', value: '300' },
             { label: 'Regular', value: '400' },
             { label: 'Medium', value: '500' },
-            { label: 'Bold', value: '600' },
+            { label: 'Semibold', value: '600' },
+            { label: 'Bold', value: '700' },
           ]}
           value={data.settings.readerWeight}
           onChange={actions.setReaderWeight}

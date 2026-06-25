@@ -3,7 +3,7 @@ import type { Cycle } from '@/lib/cycle';
 
 export type { Cycle };
 
-export type ReaderWeight = '300' | '400' | '500' | '600';
+export type ReaderWeight = '400' | '500' | '600' | '700';
 
 export type Settings = {
   translation: string;
