@@ -110,6 +110,7 @@ export function defaultData(): AppData {
     version: DATA_VERSION,
     settings: {
       translation: DEFAULT_TRANSLATION,
+      compareTranslation: null,
       readerFontScale: 1,
       displayName: 'You',
       theme: DEFAULT_PALETTE,

@@ -16,10 +16,17 @@ function cacheKey(translation: string, bookId: number, chapter: number): string 
   return `bolls:${translation}:${bookId}:${chapter}`;
 }
 
-/** Strip inline markup (e.g. `<S>1234</S>`, `<i>`, `<b>`) and normalise whitespace. */
+/**
+ * Strip inline markup and normalise whitespace. Strong's-number and footnote
+ * markers (`<S>1234</S>`, `<sup>1</sup>`) are removed *with their contents*;
+ * formatting tags (`<i>`, `<b>`) are removed but their words kept.
+ */
 export function cleanVerseText(raw: string): string {
   return raw
+    .replace(/<S>.*?<\/S>/gi, '')
+    .replace(/<sup>.*?<\/sup>/gi, '')
     .replace(/<[^>]+>/g, '')
+    .replace(/\s+([,.;:!?])/g, '$1')
     .replace(/ /g, ' ')
     .replace(/\s+/g, ' ')
     .trim();

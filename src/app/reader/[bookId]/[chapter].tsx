@@ -83,6 +83,10 @@ export default function ReaderScreen() {
   const insets = useSafeAreaInsets();
   const scheme = useColorScheme() === 'dark' ? 'dark' : 'light';
   const translation = data.settings.translation;
+  const compareTranslation =
+    data.settings.compareTranslation && data.settings.compareTranslation !== translation
+      ? data.settings.compareTranslation
+      : null;
   const scale = data.settings.readerFontScale;
   const book = bookById(bookId);
 
@@ -95,6 +99,7 @@ export default function ReaderScreen() {
   const [showTranslation, setShowTranslation] = useState(false);
   const [showChapters, setShowChapters] = useState(false);
   const [showFont, setShowFont] = useState(false);
+  const [compareMap, setCompareMap] = useState<Record<number, string>>({});
 
   const scrollRef = useRef<ScrollView>(null);
   const offsets = useRef<Record<number, number>>({});
@@ -172,6 +177,24 @@ export default function ReaderScreen() {
       return () => clearTimeout(t);
     }
   }, [targetVerse, status]);
+
+  // Fetch the comparison translation's chapter independently of the primary.
+  useEffect(() => {
+    setCompareMap({});
+    if (!compareTranslation || !book || Number.isNaN(chapter)) return;
+    let active = true;
+    getChapter(compareTranslation, bookId, chapter)
+      .then((vs) => {
+        if (!active) return;
+        const map: Record<number, string> = {};
+        for (const v of vs) map[v.verse] = v.text;
+        setCompareMap(map);
+      })
+      .catch(() => {});
+    return () => {
+      active = false;
+    };
+  }, [compareTranslation, bookId, chapter, book]);
 
   const verseText = (v: number) => verses.find((x) => x.verse === v)?.text ?? '';
   const toggleVerse = (v: number) => {
@@ -316,6 +339,21 @@ export default function ReaderScreen() {
                       {v.text}
                     </ThemedText>
                   </ThemedText>
+                  {compareTranslation && compareMap[v.verse] ? (
+                    <ThemedText
+                      type="bodySerif"
+                      style={[
+                        styles.compareText,
+                        {
+                          color: theme.textSecondary,
+                          borderLeftColor: theme.border,
+                          fontSize: 16 * scale,
+                          lineHeight: 26 * scale,
+                        },
+                      ]}>
+                      {compareMap[v.verse]}
+                    </ThemedText>
+                  ) : null}
                 </Pressable>
                 {note ? (
                   <Pressable
@@ -375,7 +413,7 @@ export default function ReaderScreen() {
               onPress={() => setShowTranslation(true)}
               style={[styles.translationMini, { backgroundColor: theme.backgroundElement }]}>
               <ThemedText type="small" themeColor="accent" style={{ fontWeight: '600' }}>
-                {translation}
+                {compareTranslation ? `${translation} · ${compareTranslation}` : translation}
               </ThemedText>
             </Pressable>
             <IconButton icon={TypeIcon} onPress={() => setShowFont(true)} accessibilityLabel="Text size" />
@@ -469,6 +507,8 @@ export default function ReaderScreen() {
         onClose={() => setShowTranslation(false)}
         value={translation}
         onSelect={actions.setTranslation}
+        compareValue={compareTranslation}
+        onSelectCompare={actions.setCompareTranslation}
       />
       <BookNav
         visible={showChapters}
@@ -530,6 +570,7 @@ const styles = StyleSheet.create({
     alignSelf: 'center',
   },
   verseRow: { paddingVertical: 4, paddingHorizontal: 6, borderRadius: Radius.sm, marginVertical: 1 },
+  compareText: { marginTop: 6, marginBottom: 2, paddingLeft: 12, borderLeftWidth: 2 },
   noteBlock: {
     marginLeft: 14,
     marginTop: 4,

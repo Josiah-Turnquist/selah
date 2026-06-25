@@ -45,7 +45,8 @@
           "image": "./assets/images/splash-icon.png",
           "imageWidth": 170
         }
-      ]
+      ],
+      "expo-sharing"
     ],
     "experiments": {
       "typedRoutes": false,

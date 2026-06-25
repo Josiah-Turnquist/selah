@@ -1,9 +1,10 @@
 import { router } from 'expo-router';
-import { BookOpen, ChevronRight, Flame, NotebookPen, Search, Settings, X } from 'lucide-react-native';
+import { BookOpen, ChevronRight, Flame, NotebookPen, Search, Settings, Share2, X } from 'lucide-react-native';
 import { useEffect, useMemo, useState, type ReactNode } from 'react';
 import { Pressable, StyleSheet, View } from 'react-native';
 
 import { ChapterPicker } from '@/components/chapter-picker';
+import { ShareVerseModal } from '@/components/share-verse-modal';
 import { ThemedText } from '@/components/themed-text';
 import { TranslationSheet } from '@/components/translation-sheet';
 import { TextField } from '@/components/ui/field';
@@ -222,8 +223,11 @@ export default function ReadScreen() {
 }
 
 function VerseOfDayCard({ translation }: { translation: string }) {
+  const theme = useTheme();
   const ref = useMemo(() => verseOfDay(), []);
   const [text, setText] = useState<string | null>(null);
+  const [showShare, setShowShare] = useState(false);
+  const reference = formatRef(ref.bookId, ref.chapter, ref.verse);
 
   useEffect(() => {
     let active = true;
@@ -237,19 +241,41 @@ function VerseOfDayCard({ translation }: { translation: string }) {
   }, [translation, ref]);
 
   return (
-    <Card onPress={() => openReader(ref.bookId, ref.chapter, ref.verse)} style={{ marginBottom: Spacing.three }}>
-      <ThemedText type="label" themeColor="accent">
-        Verse of the day
-      </ThemedText>
-      <ThemedText
-        type="bodySerif"
-        themeColor={text ? 'text' : 'textTertiary'}
-        style={{ marginTop: Spacing.two }}>
-        {text === null ? 'Loading…' : text || 'Tap to read'}
-      </ThemedText>
-      <ThemedText type="caption" themeColor="textSecondary" style={{ marginTop: Spacing.two }}>
-        {formatRef(ref.bookId, ref.chapter, ref.verse)}
-      </ThemedText>
+    <Card style={{ marginBottom: Spacing.three }}>
+      <View style={styles.votdHeader}>
+        <ThemedText type="label" themeColor="accent">
+          Verse of the day
+        </ThemedText>
+        {text ? (
+          <Pressable
+            onPress={() => setShowShare(true)}
+            hitSlop={10}
+            accessibilityLabel="Share this verse"
+            style={({ pressed }) => pressed && { opacity: 0.5 }}>
+            <Share2 size={17} color={theme.textSecondary} />
+          </Pressable>
+        ) : null}
+      </View>
+      <Pressable
+        onPress={() => openReader(ref.bookId, ref.chapter, ref.verse)}
+        accessibilityLabel="Read this verse"
+        style={({ pressed }) => pressed && { opacity: 0.6 }}>
+        <ThemedText type="bodySerif" themeColor={text ? 'text' : 'textTertiary'}>
+          {text === null ? 'Loading…' : text || 'Tap to read'}
+        </ThemedText>
+        <ThemedText type="caption" themeColor="textSecondary" style={{ marginTop: Spacing.two }}>
+          {reference}
+        </ThemedText>
+      </Pressable>
+      {text ? (
+        <ShareVerseModal
+          visible={showShare}
+          onClose={() => setShowShare(false)}
+          text={text}
+          reference={reference}
+          translation={translation}
+        />
+      ) : null}
     </Card>
   );
 }
@@ -297,6 +323,7 @@ const styles = StyleSheet.create({
   searchIcon: { position: 'absolute', left: 14, zIndex: 1 },
   searchClear: { position: 'absolute', right: 14, zIndex: 1 },
   streak: { flexDirection: 'row', alignItems: 'center', gap: 6, marginBottom: Spacing.three },
+  votdHeader: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', marginBottom: Spacing.two },
   result: { gap: 3, paddingVertical: Spacing.three },
   continue: { flexDirection: 'row', alignItems: 'center', gap: Spacing.three },
   roundIcon: { width: 46, height: 46, borderRadius: Radius.pill, alignItems: 'center', justifyContent: 'center' },
