@@ -68,7 +68,7 @@ export default function DeckDetail() {
         </View>
       </SafeAreaView>
 
-      <ScrollView contentContainerStyle={styles.content} showsVerticalScrollIndicator={false}>
+      <ScrollView contentContainerStyle={styles.content} showsVerticalScrollIndicator={false} automaticallyAdjustKeyboardInsets keyboardDismissMode="interactive">
         <View style={styles.statsRow}>
           <Pill label={deck.kind === 'verse' ? 'Verses' : 'Facts'} />
           <ThemedText type="small" themeColor="textSecondary">

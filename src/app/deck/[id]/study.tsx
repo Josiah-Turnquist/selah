@@ -330,7 +330,7 @@ function TypeIt({
   theme: ThemeT;
 }) {
   return (
-    <ScrollView contentContainerStyle={styles.quizBody} showsVerticalScrollIndicator={false} keyboardShouldPersistTaps="handled">
+    <ScrollView contentContainerStyle={styles.quizBody} showsVerticalScrollIndicator={false} keyboardShouldPersistTaps="handled" automaticallyAdjustKeyboardInsets keyboardDismissMode="interactive">
       <ThemedText type="label" themeColor="textTertiary">
         {kind === 'verse' ? 'Type the verse' : 'Type the answer'}
       </ThemedText>

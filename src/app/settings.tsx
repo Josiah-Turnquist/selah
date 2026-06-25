@@ -57,7 +57,7 @@ export default function Settings() {
         <IconButton icon={X} onPress={() => router.back()} accessibilityLabel="Close" />
       </View>
 
-      <ScrollView contentContainerStyle={styles.content} showsVerticalScrollIndicator={false}>
+      <ScrollView contentContainerStyle={styles.content} showsVerticalScrollIndicator={false} automaticallyAdjustKeyboardInsets keyboardDismissMode="interactive">
         <Label>Your name</Label>
         <TextField value={data.settings.displayName} onChangeText={actions.setDisplayName} placeholder="Your name" />
         <ThemedText type="caption" themeColor="textTertiary" style={{ marginTop: 6 }}>

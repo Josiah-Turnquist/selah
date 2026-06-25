@@ -84,7 +84,7 @@ export default function PrayerDetail() {
         </View>
       </SafeAreaView>
 
-      <ScrollView contentContainerStyle={styles.content} showsVerticalScrollIndicator={false}>
+      <ScrollView contentContainerStyle={styles.content} showsVerticalScrollIndicator={false} automaticallyAdjustKeyboardInsets keyboardDismissMode="interactive">
         <View style={styles.statsRow}>
           <Pill tone="ember" label={cycleLabel(list.cycle)} />
           <ThemedText type="small" themeColor="textSecondary">
