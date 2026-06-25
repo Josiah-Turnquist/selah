@@ -10,7 +10,7 @@ import {
   Type as TypeIcon,
   X,
 } from 'lucide-react-native';
-import { useEffect, useRef, useState } from 'react';
+import { useEffect, useMemo, useRef, useState } from 'react';
 import {
   Animated,
   Easing,
@@ -231,11 +231,16 @@ export default function ReaderScreen() {
         : `${book?.name} ${chapter}:${formatVerseRange(selected)}`;
   const selectedText = () => selected.map((v) => verseText(v)).join(' ');
 
+  const chapterNotes = useMemo(() => {
+    const map = new Map<number, Note>();
+    for (const n of data.notes) {
+      if (n.bookId === bookId && n.chapter === chapter) map.set(n.verse, n);
+    }
+    return map;
+  }, [data.notes, bookId, chapter]);
+
   const noteVerse = selected.length === 1 ? selected[0] : null;
-  const existingNote =
-    noteVerse != null
-      ? data.notes.find((n) => n.bookId === bookId && n.chapter === chapter && n.verse === noteVerse)
-      : undefined;
+  const existingNote = noteVerse != null ? chapterNotes.get(noteVerse) : undefined;
 
   const swatchActive = (c: (typeof HIGHLIGHT_COLORS)[number]) =>
     selected.length > 0 && selected.every((v) => data.highlights[refKey(bookId, chapter, v)]?.color === c);
@@ -324,9 +329,7 @@ export default function ReaderScreen() {
           </ThemedText>
 
           {flow ? (
-            buildSegments(verses, (verse) =>
-              data.notes.find((n) => n.bookId === bookId && n.chapter === chapter && n.verse === verse),
-            ).map((seg, si) => {
+            buildSegments(verses, (verse) => chapterNotes.get(verse)).map((seg, si) => {
               const segNote = seg.note;
               return (
                 <View key={`seg-${si}`} style={{ marginBottom: Spacing.three }}>
@@ -375,9 +378,7 @@ export default function ReaderScreen() {
           ) : (
             verses.map((v) => {
             const hl = data.highlights[refKey(bookId, chapter, v.verse)];
-            const note = data.notes.find(
-              (n) => n.bookId === bookId && n.chapter === chapter && n.verse === v.verse,
-            );
+            const note = chapterNotes.get(v.verse);
             const active = selected.includes(v.verse) || flash === v.verse;
             return (
               <View
