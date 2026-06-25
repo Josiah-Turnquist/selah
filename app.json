@@ -46,7 +46,8 @@
           "imageWidth": 170
         }
       ],
-      "expo-sharing"
+      "expo-sharing",
+      "./plugins/with-no-push-entitlement.js"
     ],
     "experiments": {
       "typedRoutes": false,
