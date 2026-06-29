@@ -20,6 +20,7 @@ import { Colors, DEFAULT_PALETTE, type Appearance, type HighlightColor, type Pal
 import { refKey } from '@/lib/bible/refs';
 import type { Cycle } from '@/lib/cycle';
 import type { PlanTemplate } from '@/lib/plans/templates';
+import { presetToDeck, type PresetDeck } from '@/lib/store/preset-decks';
 import { defaultData } from '@/lib/store/seed';
 import { applyGrade, type Grade } from '@/lib/store/srs';
 import {
@@ -35,6 +36,39 @@ import { localDayKey } from '@/lib/util/date';
 import { uid } from '@/lib/util/id';
 
 const STORAGE_KEY = 'selah:data:v1';
+
+/**
+ * Forward-migrate persisted data WITHOUT ever discarding it. Because everything
+ * lives on-device (no server backup), an OTA must never wipe a user: every
+ * recognised field is preserved exactly, and only genuinely missing fields fall
+ * back to defaults — per-field, so a single corrupt key can't take the rest with
+ * it. New optional fields added in later builds simply read as `undefined` on
+ * older records. Settings are the one place we deep-merge so newly added toggles
+ * get sane defaults.
+ */
+function hydrate(raw: string | null): AppData {
+  const base = defaultData();
+  if (!raw) return base;
+  let p: any;
+  try {
+    p = JSON.parse(raw);
+  } catch {
+    return base; // unparseable — there's nothing to preserve
+  }
+  if (!p || typeof p !== 'object') return base;
+  return {
+    version: DATA_VERSION,
+    settings: { ...base.settings, ...(p.settings && typeof p.settings === 'object' ? p.settings : {}) },
+    lastRead: p.lastRead ?? base.lastRead,
+    highlights: p.highlights && typeof p.highlights === 'object' ? p.highlights : {},
+    notes: Array.isArray(p.notes) ? p.notes : [],
+    plans: Array.isArray(p.plans) ? p.plans : [],
+    prayerLists: Array.isArray(p.prayerLists) ? p.prayerLists : base.prayerLists,
+    decks: Array.isArray(p.decks) ? p.decks : base.decks,
+    friends: Array.isArray(p.friends) ? p.friends : base.friends,
+    readDays: Array.isArray(p.readDays) ? p.readDays : [],
+  };
+}
 
 export type Actions = {
   // settings + reading position
@@ -66,9 +100,12 @@ export type Actions = {
   updatePrayerItem: (listId: string, itemId: string, patch: { text?: string; note?: string }) => void;
   deletePrayerItem: (listId: string, itemId: string) => void;
   togglePrayed: (listId: string, itemId: string) => void;
+  setPrayerAnswered: (listId: string, itemId: string, answered: boolean) => void;
+  setListReminder: (listId: string, hour: number | null) => void;
   importPrayerList: (list: PrayerList, fromName?: string) => string;
   // study decks
   addDeck: (title: string, kind: DeckKind, description?: string) => string;
+  addPresetDeck: (preset: PresetDeck) => string;
   updateDeck: (id: string, patch: { title?: string; description?: string }) => void;
   deleteDeck: (id: string) => void;
   addCard: (deckId: string, front: string, back: string, ref?: CardRef) => void;
@@ -94,21 +131,13 @@ export function StoreProvider({ children }: { children: ReactNode }) {
   useEffect(() => {
     let active = true;
     (async () => {
+      let raw: string | null = null;
       try {
-        const raw = await AsyncStorage.getItem(STORAGE_KEY);
-        if (raw) {
-          const parsed = JSON.parse(raw) as AppData;
-          if (parsed?.version === DATA_VERSION) {
-            // Merge over defaults so fields added in newer builds get sane values.
-            const base = defaultData();
-            if (active) setData({ ...base, ...parsed, settings: { ...base.settings, ...parsed.settings } });
-            return;
-          }
-        }
+        raw = await AsyncStorage.getItem(STORAGE_KEY);
       } catch {
-        // ignore corrupt/missing data and fall back to seed
+        // storage read failed — fall back to defaults without crashing
       }
-      if (active) setData(defaultData());
+      if (active) setData(hydrate(raw));
     })();
     return () => {
       active = false;
@@ -299,6 +328,27 @@ export function StoreProvider({ children }: { children: ReactNode }) {
           }),
         }));
       },
+      setPrayerAnswered: (listId, itemId, answered) =>
+        update((p) => ({
+          ...p,
+          prayerLists: p.prayerLists.map((l) =>
+            l.id === listId
+              ? {
+                  ...l,
+                  items: l.items.map((it) =>
+                    it.id === itemId
+                      ? { ...it, answered, answeredAt: answered ? localDayKey() : undefined }
+                      : it,
+                  ),
+                }
+              : l,
+          ),
+        })),
+      setListReminder: (listId, hour) =>
+        update((p) => ({
+          ...p,
+          prayerLists: p.prayerLists.map((l) => (l.id === listId ? { ...l, reminderHour: hour } : l)),
+        })),
       importPrayerList: (list, fromName) => {
         const id = uid('pl_');
         update((p) => ({
@@ -324,6 +374,11 @@ export function StoreProvider({ children }: { children: ReactNode }) {
           decks: [{ id, title, kind, description, cards: [], createdAt: Date.now() }, ...p.decks],
         }));
         return id;
+      },
+      addPresetDeck: (preset) => {
+        const deck = presetToDeck(preset, Date.now());
+        update((p) => ({ ...p, decks: [deck, ...p.decks] }));
+        return deck.id;
       },
       updateDeck: (id, patch) =>
         update((p) => ({ ...p, decks: p.decks.map((d) => (d.id === id ? { ...d, ...patch } : d)) })),

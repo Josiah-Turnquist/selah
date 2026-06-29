@@ -10,12 +10,13 @@ import {
   Type as TypeIcon,
   X,
 } from 'lucide-react-native';
-import { useEffect, useMemo, useRef, useState } from 'react';
+import { useEffect, useMemo, useRef, useState, type ReactNode } from 'react';
 import {
   Animated,
   Easing,
   type NativeScrollEvent,
   type NativeSyntheticEvent,
+  PanResponder,
   Platform,
   Pressable,
   ScrollView,
@@ -45,7 +46,7 @@ import {
   highlightBg,
 } from '@/constants/theme';
 import { BOOKS, bookById } from '@/lib/bible/books';
-import { getChapter, prefetchChapter, type Verse } from '@/lib/bible/bolls';
+import { getChapter, peekChapter, prefetchChapter, type Verse } from '@/lib/bible/bolls';
 import { formatRef, formatVerseRange, refKey } from '@/lib/bible/refs';
 import { useColorScheme } from '@/hooks/use-color-scheme';
 import { useTheme } from '@/hooks/use-theme';
@@ -72,12 +73,17 @@ function neighbor(bookId: number, chapter: number, dir: 1 | -1): Neighbor {
 const round1 = (n: number) => Math.round(n * 10) / 10;
 const useNative = Platform.OS !== 'web';
 
-// Group verses into flowing runs, breaking after any verse that has a note so
-// the note can render between paragraphs.
+// Group verses into flowing runs. A run breaks before a verse that carries a
+// heading (so the heading opens a fresh paragraph) and after any verse with a
+// note (so the note can render between paragraphs).
 function buildSegments(verses: Verse[], getNote: (verse: number) => Note | undefined) {
   const segments: { verses: Verse[]; note?: Note }[] = [];
   let run: Verse[] = [];
   for (const v of verses) {
+    if (v.headings.length && run.length) {
+      segments.push({ verses: run });
+      run = [];
+    }
     run.push(v);
     const note = getNote(v.verse);
     if (note) {
@@ -111,8 +117,10 @@ export default function ReaderScreen() {
   const flow = data.settings.paragraphMode && !compareTranslation;
   const book = bookById(bookId);
 
-  const [verses, setVerses] = useState<Verse[]>([]);
-  const [status, setStatus] = useState<'loading' | 'ready' | 'error'>('loading');
+  const [verses, setVerses] = useState<Verse[]>(() => peekChapter(translation, bookId, chapter) ?? []);
+  const [status, setStatus] = useState<'loading' | 'ready' | 'error'>(() =>
+    peekChapter(translation, bookId, chapter) ? 'ready' : 'loading',
+  );
   const [selected, setSelected] = useState<number[]>([]);
   const [sheet, setSheet] = useState<'note' | 'deck' | null>(null);
   const [noteText, setNoteText] = useState('');
@@ -157,8 +165,6 @@ export default function ReaderScreen() {
 
   useEffect(() => {
     let active = true;
-    setStatus('loading');
-    setVerses([]);
     setSelected([]);
     setSheet(null);
     offsets.current = {};
@@ -171,19 +177,30 @@ export default function ReaderScreen() {
       setStatus('error');
       return;
     }
-    getChapter(translation, bookId, chapter)
-      .then((v) => {
-        if (!active) return;
-        setVerses(v);
-        setStatus('ready');
-        actions.recordRead();
-        if (!targetVerse) {
-          requestAnimationFrame(() => scrollRef.current?.scrollTo({ y: 0, animated: false }));
-        }
-        const next = neighbor(bookId, chapter, 1);
-        if (next) prefetchChapter(translation, next.bookId, next.chapter);
-      })
-      .catch(() => active && setStatus('error'));
+    const onReady = (v: Verse[]) => {
+      if (!active) return;
+      setVerses(v);
+      setStatus('ready');
+      actions.recordRead();
+      if (!targetVerse) {
+        requestAnimationFrame(() => scrollRef.current?.scrollTo({ y: 0, animated: false }));
+      }
+      // Warm both neighbours so swiping either direction is instant.
+      const after = neighbor(bookId, chapter, 1);
+      if (after) prefetchChapter(translation, after.bookId, after.chapter);
+      const before = neighbor(bookId, chapter, -1);
+      if (before) prefetchChapter(translation, before.bookId, before.chapter);
+    };
+    const cached = peekChapter(translation, bookId, chapter);
+    if (cached) {
+      onReady(cached);
+    } else {
+      setStatus('loading');
+      setVerses([]);
+      getChapter(translation, bookId, chapter)
+        .then(onReady)
+        .catch(() => active && setStatus('error'));
+    }
     actions.setLastRead(bookId, chapter);
     return () => {
       active = false;
@@ -247,8 +264,15 @@ export default function ReaderScreen() {
   const applyHighlight = (c: (typeof HIGHLIGHT_COLORS)[number]) => {
     const turnOff = swatchActive(c);
     selected.forEach((v) => actions.setHighlight(bookId, chapter, v, turnOff ? null : c));
+    tapSuccess();
+    setSelected([]);
+    setSheet(null);
   };
-  const clearHighlight = () => selected.forEach((v) => actions.setHighlight(bookId, chapter, v, null));
+  const clearHighlight = () => {
+    selected.forEach((v) => actions.setHighlight(bookId, chapter, v, null));
+    setSelected([]);
+    setSheet(null);
+  };
 
   const openNote = () => {
     setNoteText(existingNote?.text ?? '');
@@ -295,6 +319,226 @@ export default function ReaderScreen() {
   const prev = neighbor(bookId, chapter, -1);
   const next = neighbor(bookId, chapter, 1);
 
+  // Horizontal swipe → previous / next chapter. Only claims the gesture on a
+  // decisive sideways drag, so vertical scrolling and verse taps are untouched.
+  const swipe = useMemo(
+    () =>
+      PanResponder.create({
+        onMoveShouldSetPanResponder: (_, g) =>
+          Math.abs(g.dx) > 20 && Math.abs(g.dx) > Math.abs(g.dy) * 1.5,
+        onPanResponderTerminationRequest: () => false,
+        onPanResponderRelease: (_, g) => {
+          if (Math.abs(g.dx) < 56 || Math.abs(g.dx) < Math.abs(g.dy)) return;
+          const target = neighbor(bookId, chapter, g.dx < 0 ? 1 : -1);
+          if (target) {
+            tapLight();
+            setSelected([]);
+            setSheet(null);
+            router.replace(`/reader/${target.bookId}/${target.chapter}`);
+          }
+        },
+      }),
+    [bookId, chapter],
+  );
+
+  const verseNumStyle = {
+    fontSize: 11 * scale,
+    lineHeight: 31 * scale,
+    color: theme.textTertiary,
+    fontWeight: '600' as const,
+  };
+  const bodyLineStyle = { fontSize: 18 * scale, lineHeight: 31 * scale, fontWeight: weight };
+
+  const renderHeadings = (headings: Verse['headings']) =>
+    headings.map((h, hi) => {
+      if (h.kind === 'divider') {
+        return (
+          <ThemedText key={`h-${hi}`} type="bodySerif" style={[styles.divider, { fontSize: 13 * scale, color: theme.textTertiary }]}>
+            {h.text}
+          </ThemedText>
+        );
+      }
+      if (h.kind === 'superscription') {
+        return (
+          <ThemedText
+            key={`h-${hi}`}
+            type="bodySerif"
+            style={[styles.superscription, { fontSize: 15 * scale, lineHeight: 22 * scale, color: theme.textSecondary }]}>
+            {h.text}
+          </ThemedText>
+        );
+      }
+      return (
+        <ThemedText
+          key={`h-${hi}`}
+          type="bodySerif"
+          style={[styles.sectionHeading, { fontSize: 16 * scale, lineHeight: 23 * scale, color: theme.text }]}>
+          {h.text}
+        </ThemedText>
+      );
+    });
+
+  // A verse's body as block lines: a hanging verse-number gutter beside a column
+  // of poetic lines. Each line is its own block so highlights round + pad, and
+  // Selah sits right-aligned on its own line.
+  const renderLines = (v: Verse, hl?: (typeof HIGHLIGHT_COLORS)[number]) => {
+    const numberLine = v.lines.findIndex((l) => l.text.length > 0);
+    return (
+      <View style={styles.lineRow}>
+        <ThemedText style={[verseNumStyle, { width: 24 * scale }]}>{numberLine >= 0 ? v.verse : ''}</ThemedText>
+        <View style={styles.lineCol}>
+          {v.lines.map((ln, li) => (
+            <View key={li}>
+              {ln.text ? (
+                hl ? (
+                  // Highlight lives on a <View> — the New Architecture ignores
+                  // borderRadius/padding on <Text>. flexShrink lets long lines
+                  // wrap inside the chip while short lines hug the words.
+                  <View style={styles.hlLine}>
+                    <View style={[styles.hlChip, { backgroundColor: highlightBg(hl, scheme) }]}>
+                      <ThemedText type="bodySerif" style={bodyLineStyle}>
+                        {ln.text}
+                      </ThemedText>
+                    </View>
+                  </View>
+                ) : (
+                  <ThemedText type="bodySerif" style={bodyLineStyle}>
+                    {ln.text}
+                  </ThemedText>
+                )
+              ) : null}
+              {ln.selah ? (
+                <ThemedText
+                  type="bodySerif"
+                  style={[styles.selah, { fontSize: 15 * scale, lineHeight: 26 * scale, color: theme.textTertiary }]}>
+                  Selah
+                </ThemedText>
+              ) : null}
+            </View>
+          ))}
+        </View>
+      </View>
+    );
+  };
+
+  // The tappable verse body — used in verse-lines mode and for poetry verses in
+  // paragraph mode. Headings and notes are rendered by the caller.
+  const renderVerseBlock = (v: Verse) => {
+    const hl = data.highlights[refKey(bookId, chapter, v.verse)];
+    const active = selected.includes(v.verse) || flash === v.verse;
+    const hasCompare = !!(compareTranslation && compareMap[v.verse]);
+    if (v.lines.length === 0 && !hasCompare) return null;
+    return (
+      <Pressable
+        key={`vb-${v.verse}`}
+        onPress={() => toggleVerse(v.verse)}
+        style={[styles.verseRow, active && { backgroundColor: theme.accentSoft }]}>
+        {renderLines(v, hl?.color)}
+        {hasCompare ? (
+          <ThemedText
+            type="bodySerif"
+            style={[
+              styles.compareText,
+              { color: theme.textSecondary, borderLeftColor: theme.border, fontSize: 16 * scale, lineHeight: 26 * scale },
+            ]}>
+            {compareMap[v.verse]}
+          </ThemedText>
+        ) : null}
+      </Pressable>
+    );
+  };
+
+  const renderNote = (note: Note) => (
+    <Pressable
+      onPress={() => {
+        setSelected([note.verse]);
+        setNoteText(note.text);
+        setSheet('note');
+      }}
+      style={[styles.noteBlock, { borderLeftColor: theme.accent, backgroundColor: theme.accentSoft }]}>
+      <StickyNote size={14} color={theme.accent} style={{ marginTop: 2 }} />
+      <ThemedText type="caption" themeColor="textSecondary" style={{ flex: 1 }}>
+        {note.text}
+      </ThemedText>
+    </Pressable>
+  );
+
+  // Verse-lines mode: each verse is its own block, with the onLayout hook used
+  // to jump to a target verse.
+  const renderVerse = (v: Verse) => {
+    const note = chapterNotes.get(v.verse);
+    return (
+      <View
+        key={v.verse}
+        onLayout={(e) => {
+          offsets.current[v.verse] = e.nativeEvent.layout.y;
+          if (targetVerse === v.verse && !scrolled.current) {
+            scrolled.current = true;
+            requestAnimationFrame(() =>
+              scrollRef.current?.scrollTo({
+                y: Math.max(0, (offsets.current[v.verse] ?? 0) - 90),
+                animated: true,
+              }),
+            );
+          }
+        }}>
+        {renderHeadings(v.headings)}
+        {renderVerseBlock(v)}
+        {note ? renderNote(note) : null}
+      </View>
+    );
+  };
+
+  // Paragraph mode: prose verses flow together; poetry verses (multiple lines or
+  // Selah) still break into lines so the structure is preserved.
+  const renderParagraphSegment = (seg: { verses: Verse[]; note?: Note }, si: number) => {
+    const blocks: ReactNode[] = [];
+    let inline: ReactNode[] = [];
+    let k = 0;
+    const flushInline = () => {
+      if (!inline.length) return;
+      blocks.push(
+        <ThemedText
+          key={`fl-${k++}`}
+          type="bodySerif"
+          style={{ fontSize: 18 * scale, lineHeight: 31 * scale, fontWeight: weight, paddingHorizontal: 6 }}>
+          {inline}
+        </ThemedText>,
+      );
+      inline = [];
+    };
+    seg.verses.forEach((v) => {
+      const isPoetry = v.lines.length > 1 || v.lines.some((l) => l.selah);
+      if (isPoetry) {
+        flushInline();
+        blocks.push(renderVerseBlock(v));
+        return;
+      }
+      const body = v.lines.map((l) => l.text).join(' ');
+      if (!body) return;
+      const fhl = data.highlights[refKey(bookId, chapter, v.verse)];
+      const factive = selected.includes(v.verse) || flash === v.verse;
+      inline.push(
+        <ThemedText
+          key={`v-${v.verse}`}
+          onPress={() => toggleVerse(v.verse)}
+          style={factive ? { backgroundColor: theme.accentSoft } : undefined}>
+          <ThemedText style={verseNumStyle}>{v.verse} </ThemedText>
+          <ThemedText style={[bodyLineStyle, fhl && { backgroundColor: highlightBg(fhl.color, scheme) }]}>{body}</ThemedText>
+          {'  '}
+        </ThemedText>,
+      );
+    });
+    flushInline();
+    return (
+      <View key={`seg-${si}`} style={{ marginBottom: Spacing.three }}>
+        {renderHeadings(seg.verses[0]?.headings ?? [])}
+        {blocks}
+        {seg.note ? renderNote(seg.note) : null}
+      </View>
+    );
+  };
+
   return (
     <View style={[styles.flex, { backgroundColor: theme.background }]}>
       {status === 'loading' ? (
@@ -314,6 +558,7 @@ export default function ReaderScreen() {
           />
         </View>
       ) : (
+        <View style={styles.flex} {...swipe.panHandlers}>
         <ScrollView
           ref={scrollRef}
           onScroll={onScroll}
@@ -329,121 +574,9 @@ export default function ReaderScreen() {
           </ThemedText>
 
           {flow ? (
-            buildSegments(verses, (verse) => chapterNotes.get(verse)).map((seg, si) => {
-              const segNote = seg.note;
-              return (
-                <View key={`seg-${si}`} style={{ marginBottom: Spacing.three }}>
-                  <ThemedText type="bodySerif" style={{ fontSize: 18 * scale, lineHeight: 31 * scale, fontWeight: weight, paddingHorizontal: 6 }}>
-                    {seg.verses.map((fv) => {
-                      const fhl = data.highlights[refKey(bookId, chapter, fv.verse)];
-                      const factive = selected.includes(fv.verse) || flash === fv.verse;
-                      return (
-                        <ThemedText
-                          key={fv.verse}
-                          onPress={() => toggleVerse(fv.verse)}
-                          style={factive ? { backgroundColor: theme.accentSoft } : undefined}>
-                          <ThemedText
-                            style={{ fontSize: 11 * scale, lineHeight: 31 * scale, color: theme.textTertiary, fontWeight: '600' }}>
-                            {fv.verse}{' '}
-                          </ThemedText>
-                          <ThemedText
-                            style={[
-                              { fontSize: 18 * scale, lineHeight: 31 * scale, fontWeight: weight },
-                              fhl && { backgroundColor: highlightBg(fhl.color, scheme) },
-                            ]}>
-                            {fv.text}
-                          </ThemedText>
-                          {'  '}
-                        </ThemedText>
-                      );
-                    })}
-                  </ThemedText>
-                  {segNote ? (
-                    <Pressable
-                      onPress={() => {
-                        setSelected([segNote.verse]);
-                        setNoteText(segNote.text);
-                        setSheet('note');
-                      }}
-                      style={[styles.noteBlock, { borderLeftColor: theme.accent, backgroundColor: theme.accentSoft }]}>
-                      <StickyNote size={14} color={theme.accent} style={{ marginTop: 2 }} />
-                      <ThemedText type="caption" themeColor="textSecondary" style={{ flex: 1 }}>
-                        {segNote.text}
-                      </ThemedText>
-                    </Pressable>
-                  ) : null}
-                </View>
-              );
-            })
+            buildSegments(verses, (verse) => chapterNotes.get(verse)).map(renderParagraphSegment)
           ) : (
-            verses.map((v) => {
-            const hl = data.highlights[refKey(bookId, chapter, v.verse)];
-            const note = chapterNotes.get(v.verse);
-            const active = selected.includes(v.verse) || flash === v.verse;
-            return (
-              <View
-                key={v.verse}
-                onLayout={(e) => {
-                  offsets.current[v.verse] = e.nativeEvent.layout.y;
-                  if (targetVerse === v.verse && !scrolled.current) {
-                    scrolled.current = true;
-                    requestAnimationFrame(() =>
-                      scrollRef.current?.scrollTo({
-                        y: Math.max(0, (offsets.current[v.verse] ?? 0) - 90),
-                        animated: true,
-                      }),
-                    );
-                  }
-                }}>
-                <Pressable
-                  onPress={() => toggleVerse(v.verse)}
-                  style={[styles.verseRow, active && { backgroundColor: theme.accentSoft }]}>
-                  <ThemedText type="bodySerif" style={{ fontSize: 18 * scale, lineHeight: 31 * scale }}>
-                    <ThemedText
-                      style={{ fontSize: 11 * scale, lineHeight: 31 * scale, color: theme.textTertiary, fontWeight: '600' }}>
-                      {v.verse}{' '}
-                    </ThemedText>
-                    <ThemedText
-                      style={[
-                        { fontSize: 18 * scale, lineHeight: 31 * scale, fontWeight: weight },
-                        hl && { backgroundColor: highlightBg(hl.color, scheme) },
-                      ]}>
-                      {v.text}
-                    </ThemedText>
-                  </ThemedText>
-                  {compareTranslation && compareMap[v.verse] ? (
-                    <ThemedText
-                      type="bodySerif"
-                      style={[
-                        styles.compareText,
-                        {
-                          color: theme.textSecondary,
-                          borderLeftColor: theme.border,
-                          fontSize: 16 * scale,
-                          lineHeight: 26 * scale,
-                        },
-                      ]}>
-                      {compareMap[v.verse]}
-                    </ThemedText>
-                  ) : null}
-                </Pressable>
-                {note ? (
-                  <Pressable
-                    onPress={() => {
-                      setSelected([v.verse]);
-                      setNoteText(note.text);
-                      setSheet('note');
-                    }}
-                    style={[styles.noteBlock, { borderLeftColor: theme.accent, backgroundColor: theme.accentSoft }]}>
-                    <StickyNote size={14} color={theme.accent} style={{ marginTop: 2 }} />
-                    <ThemedText type="caption" themeColor="textSecondary" style={{ flex: 1 }}>
-                      {note.text}
-                    </ThemedText>
-                  </Pressable>
-                ) : null}
-              </View>
-            );
-            })
+            verses.map(renderVerse)
           )}
 
           <View style={styles.navRow}>
@@ -458,13 +591,14 @@ export default function ReaderScreen() {
             <Button
               variant="secondary"
               size="sm"
-              icon={ChevronRight}
+              iconRight={ChevronRight}
               title={next ? formatRef(next.bookId, next.chapter) : 'End'}
               onPress={() => go(next)}
               disabled={!next}
             />
           </View>
         </ScrollView>
+        </View>
       )}
 
       <Animated.View
@@ -656,6 +790,18 @@ const styles = StyleSheet.create({
     alignSelf: 'center',
   },
   verseRow: { paddingVertical: 4, paddingHorizontal: 6, borderRadius: Radius.sm, marginVertical: 1 },
+  lineRow: { flexDirection: 'row', alignItems: 'flex-start' },
+  lineCol: { flex: 1 },
+  hlLine: { flexDirection: 'row' },
+  // Padding is cancelled by equal negative margins on both axes: the text keeps the
+  // exact same position as un-highlighted text (no indent, no height shift) while the
+  // background still extends slightly past it, and consecutive highlighted lines overlap
+  // so their chips merge with no gap.
+  hlChip: { flexShrink: 1, borderRadius: 6, paddingHorizontal: 5, paddingVertical: 3, marginHorizontal: -5, marginVertical: -3 },
+  divider: { fontFamily: Fonts.serif, textAlign: 'left', fontWeight: '700', letterSpacing: 0.5, paddingHorizontal: 6, marginTop: Spacing.two, marginBottom: Spacing.half },
+  superscription: { fontFamily: Fonts.serif, fontStyle: 'italic', marginTop: 2, marginBottom: Spacing.two, paddingHorizontal: 6 },
+  sectionHeading: { fontFamily: Fonts.serif, fontWeight: '600', marginTop: Spacing.three, marginBottom: Spacing.one, paddingHorizontal: 6, letterSpacing: -0.2 },
+  selah: { textAlign: 'right', fontStyle: 'italic', marginTop: 2, marginBottom: 4 },
   compareText: { marginTop: 6, marginBottom: 2, paddingLeft: 12, borderLeftWidth: 2 },
   noteBlock: {
     marginLeft: 14,

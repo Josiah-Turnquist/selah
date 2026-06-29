@@ -57,6 +57,8 @@ export type PrayerItem = {
   note?: string;
   createdAt: number;
   prayed: string[]; // YYYY-MM-DD days the item was prayed
+  answered?: boolean; // moved to the Answered view; hidden from active lists
+  answeredAt?: string; // YYYY-MM-DD it was marked answered
 };
 
 export type PrayerList = {
@@ -66,6 +68,7 @@ export type PrayerList = {
   items: PrayerItem[];
   createdAt: number;
   sharedFrom?: string;
+  reminderHour?: number | null; // 0–23 daily reminder for this list, or null/undefined when off
 };
 
 export type CardRef = { bookId: number; chapter: number; verse: number };

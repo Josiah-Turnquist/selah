@@ -16,6 +16,7 @@ export function Button({
   variant = 'primary',
   size = 'md',
   icon: Icon,
+  iconRight: IconRight,
   disabled,
   full,
   style,
@@ -26,6 +27,7 @@ export function Button({
   variant?: ButtonVariant;
   size?: ButtonSize;
   icon?: IconType;
+  iconRight?: IconType;
   disabled?: boolean;
   full?: boolean;
   style?: StyleProp<ViewStyle>;
@@ -75,6 +77,7 @@ export function Button({
           {title}
         </ThemedText>
       ) : null}
+      {IconRight ? <IconRight size={size === 'sm' ? 16 : 18} color={fg} strokeWidth={2} /> : null}
     </Pressable>
   );
 }
