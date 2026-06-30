@@ -47,9 +47,29 @@ export async function cancelReminders(): Promise<void> {
 }
 
 /**
- * Schedule (or replace) a list's daily reminder. The body quotes a random active
- * prayer from the list; callers re-invoke this on launch so the quoted prayer
- * rotates over time (a static local notification can't re-randomise itself).
+ * A rotating pool of gentle reminder titles — some fixed, some woven with the
+ * list's name. The list-name variants use phrasings that read naturally whether
+ * the list is a person ("A moment for Caedyn") or a category ("A moment for
+ * Daily Prayers"), so no title is ever grammatically awkward.
+ */
+const TITLE_TEMPLATES: ((list: string) => string)[] = [
+  () => 'Pause to pray',
+  () => 'A moment to pray',
+  () => 'Time to pray',
+  () => 'Be still and pray',
+  (list) => `A moment for ${list}`,
+  (list) => `Pause to pray through ${list}`,
+  (list) => `Praying through ${list}`,
+];
+
+const pickTitle = (list: string): string =>
+  TITLE_TEMPLATES[Math.floor(Math.random() * TITLE_TEMPLATES.length)](list);
+
+/**
+ * Schedule (or replace) a list's daily reminder. The title is drawn at random
+ * from TITLE_TEMPLATES and the body quotes a random active prayer from the list;
+ * callers re-invoke this on launch so both the wording and the quoted prayer
+ * rotate over time (a static local notification can't re-randomise itself).
  */
 export async function scheduleListReminder(
   id: string,
@@ -61,10 +81,10 @@ export async function scheduleListReminder(
   const N = notif();
   await N.cancelScheduledNotificationAsync(listReminderId(id)).catch(() => {});
   const pick = items.length ? items[Math.floor(Math.random() * items.length)] : null;
-  const body = pick ?? `A moment to pray through ${title}.`;
+  const body = pick ?? 'A quiet moment in prayer.';
   await N.scheduleNotificationAsync({
     identifier: listReminderId(id),
-    content: { title: `Pray · ${title}`, body },
+    content: { title: pickTitle(title), body },
     trigger: { type: N.SchedulableTriggerInputTypes.DAILY, hour, minute: 0 },
   });
 }

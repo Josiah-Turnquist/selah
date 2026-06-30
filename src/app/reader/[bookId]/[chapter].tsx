@@ -455,7 +455,7 @@ export default function ReaderScreen() {
         setNoteText(note.text);
         setSheet('note');
       }}
-      style={[styles.noteBlock, { borderLeftColor: theme.accent, backgroundColor: theme.accentSoft }]}>
+      style={[styles.noteBlock, { backgroundColor: theme.accentSoft }]}>
       <StickyNote size={14} color={theme.accent} style={{ marginTop: 2 }} />
       <ThemedText type="caption" themeColor="textSecondary" style={{ flex: 1 }}>
         {note.text}
@@ -809,7 +809,6 @@ const styles = StyleSheet.create({
     marginBottom: 6,
     paddingVertical: Spacing.two,
     paddingHorizontal: Spacing.three,
-    borderLeftWidth: 3,
     borderRadius: Radius.sm,
     flexDirection: 'row',
     gap: Spacing.two,
