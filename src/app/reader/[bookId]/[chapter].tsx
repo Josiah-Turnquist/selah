@@ -129,6 +129,7 @@ export default function ReaderScreen() {
   const [showChapters, setShowChapters] = useState(false);
   const [showFont, setShowFont] = useState(false);
   const [compareMap, setCompareMap] = useState<Record<number, string>>({});
+  const [openNotes, setOpenNotes] = useState<Set<number>>(() => new Set());
 
   const scrollRef = useRef<ScrollView>(null);
   const offsets = useRef<Record<number, number>>({});
@@ -167,6 +168,7 @@ export default function ReaderScreen() {
     let active = true;
     setSelected([]);
     setSheet(null);
+    setOpenNotes(new Set());
     offsets.current = {};
     scrolled.current = false;
     progress.setValue(0);
@@ -378,11 +380,40 @@ export default function ReaderScreen() {
       );
     });
 
+  const toggleNote = (verse: number) =>
+    setOpenNotes((prev) => {
+      const next = new Set(prev);
+      if (next.has(verse)) next.delete(verse);
+      else next.add(verse);
+      return next;
+    });
+
+  // A small accent glyph that trails a verse which has a note; tapping it
+  // collapses or expands that note. (React Native can't place a real SVG icon
+  // inline inside flowing <Text>, so this is a themed character, not StickyNote.)
+  const noteMarker = (verse: number) => (
+    <ThemedText
+      onPress={() => toggleNote(verse)}
+      suppressHighlighting
+      accessibilityRole="button"
+      accessibilityLabel={openNotes.has(verse) ? 'Hide note' : 'Show note'}
+      style={{ color: theme.accent, fontSize: 15 * scale }}>
+      {' ✎'}
+    </ThemedText>
+  );
+
   // A verse's body as block lines: a hanging verse-number gutter beside a column
   // of poetic lines. Each line is its own block so highlights round + pad, and
   // Selah sits right-aligned on its own line.
-  const renderLines = (v: Verse, hl?: (typeof HIGHLIGHT_COLORS)[number]) => {
+  const renderLines = (v: Verse, hl?: (typeof HIGHLIGHT_COLORS)[number], marker?: ReactNode) => {
     const numberLine = v.lines.findIndex((l) => l.text.length > 0);
+    let lastLine = -1;
+    for (let i = v.lines.length - 1; i >= 0; i--) {
+      if (v.lines[i].text.length > 0) {
+        lastLine = i;
+        break;
+      }
+    }
     return (
       <View style={styles.lineRow}>
         <ThemedText style={[verseNumStyle, { width: 24 * scale }]}>{numberLine >= 0 ? v.verse : ''}</ThemedText>
@@ -400,10 +431,12 @@ export default function ReaderScreen() {
                         {ln.text}
                       </ThemedText>
                     </View>
+                    {li === lastLine ? marker : null}
                   </View>
                 ) : (
                   <ThemedText type="bodySerif" style={bodyLineStyle}>
                     {ln.text}
+                    {li === lastLine ? marker : null}
                   </ThemedText>
                 )
               ) : null}
@@ -433,7 +466,7 @@ export default function ReaderScreen() {
         key={`vb-${v.verse}`}
         onPress={() => toggleVerse(v.verse)}
         style={[styles.verseRow, active && { backgroundColor: theme.accentSoft }]}>
-        {renderLines(v, hl?.color)}
+        {renderLines(v, hl?.color, chapterNotes.has(v.verse) ? noteMarker(v.verse) : undefined)}
         {hasCompare ? (
           <ThemedText
             type="bodySerif"
@@ -456,7 +489,6 @@ export default function ReaderScreen() {
         setSheet('note');
       }}
       style={[styles.noteBlock, { backgroundColor: theme.accentSoft }]}>
-      <StickyNote size={14} color={theme.accent} style={{ marginTop: 2 }} />
       <ThemedText type="caption" themeColor="textSecondary" style={{ flex: 1 }}>
         {note.text}
       </ThemedText>
@@ -484,7 +516,7 @@ export default function ReaderScreen() {
         }}>
         {renderHeadings(v.headings)}
         {renderVerseBlock(v)}
-        {note ? renderNote(note) : null}
+        {note && openNotes.has(v.verse) ? renderNote(note) : null}
       </View>
     );
   };
@@ -525,6 +557,7 @@ export default function ReaderScreen() {
           style={factive ? { backgroundColor: theme.accentSoft } : undefined}>
           <ThemedText style={verseNumStyle}>{v.verse} </ThemedText>
           <ThemedText style={[bodyLineStyle, fhl && { backgroundColor: highlightBg(fhl.color, scheme) }]}>{body}</ThemedText>
+          {chapterNotes.has(v.verse) ? noteMarker(v.verse) : null}
           {'  '}
         </ThemedText>,
       );
@@ -534,7 +567,7 @@ export default function ReaderScreen() {
       <View key={`seg-${si}`} style={{ marginBottom: Spacing.three }}>
         {renderHeadings(seg.verses[0]?.headings ?? [])}
         {blocks}
-        {seg.note ? renderNote(seg.note) : null}
+        {seg.note && openNotes.has(seg.note.verse) ? renderNote(seg.note) : null}
       </View>
     );
   };
