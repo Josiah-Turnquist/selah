@@ -6,6 +6,7 @@ import { DEFAULT_TRANSLATION } from '@/lib/bible/translations';
 import { addDays, localDayKey } from '@/lib/util/date';
 import { uid } from '@/lib/util/id';
 
+import { PRESET_DECKS, presetToDeck } from './preset-decks';
 import type { AppData, Card, CardRef, Deck, Friend, PlanProgress, PrayerList } from './types';
 import { DATA_VERSION } from './types';
 
@@ -91,20 +92,9 @@ export function defaultData(): AppData {
     ],
   };
 
-  const apostles: Deck = {
-    id: uid('dk_'),
-    title: 'The Twelve Apostles',
-    description: 'A taste of V2 — study decks beyond verses',
-    kind: 'fact',
-    createdAt: now,
-    cards: [
-      makeCard('Which apostle was a tax collector?', 'Matthew (also called Levi)'),
-      makeCard('Who walked on water toward Jesus?', 'Peter'),
-      makeCard('Who is called “the disciple whom Jesus loved”?', 'John'),
-      makeCard('Which apostle doubted until he saw the risen Jesus?', 'Thomas'),
-      makeCard('Who replaced Judas Iscariot among the Twelve?', 'Matthias (Acts 1:26)'),
-    ],
-  };
+  // New installs get the full apostles starter deck; more are available to add
+  // from Study → Starter decks.
+  const apostles: Deck = presetToDeck(PRESET_DECKS.find((d) => d.key === 'apostles')!, now);
 
   return {
     version: DATA_VERSION,

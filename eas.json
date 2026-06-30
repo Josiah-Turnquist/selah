@@ -32,7 +32,8 @@
   "submit": {
     "production": {
       "ios": {
-        "appleId": "josiahturnq@gmail.com"
+        "appleId": "josiahturnq@gmail.com",
+        "ascAppId": "6780701788"
       }
     }
   }

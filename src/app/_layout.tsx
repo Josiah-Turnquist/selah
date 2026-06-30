@@ -5,6 +5,7 @@ import { Linking } from 'react-native';
 import { SafeAreaProvider } from 'react-native-safe-area-context';
 
 import { CelebrationWatcher } from '@/components/celebration-watcher';
+import { ReminderSync } from '@/components/reminder-sync';
 import { CelebrationProvider } from '@/components/ui/celebrate';
 import { ToastProvider } from '@/components/ui/toast';
 import { useColorSchemeEffective, useTheme } from '@/hooks/use-theme';
@@ -36,6 +37,7 @@ export default function RootLayout() {
         <CelebrationProvider>
           <ToastProvider>
             <CelebrationWatcher />
+            <ReminderSync />
             <ThemedChrome />
           </ToastProvider>
         </CelebrationProvider>
@@ -57,6 +59,9 @@ function ThemedChrome() {
         }}>
         <Stack.Screen name="settings" options={{ presentation: 'modal' }} />
         <Stack.Screen name="import" options={{ presentation: 'modal' }} />
+        {/* Reader owns horizontal swipes (prev/next chapter), so disable the
+            native back-gesture and swap chapters instantly with no overlay. */}
+        <Stack.Screen name="reader/[bookId]/[chapter]" options={{ gestureEnabled: false, animation: 'none' }} />
       </Stack>
       <StatusBar style={isDark ? 'light' : 'dark'} />
     </ThemeProvider>

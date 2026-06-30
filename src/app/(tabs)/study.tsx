@@ -1,5 +1,5 @@
 import { router } from 'expo-router';
-import { GraduationCap, Plus } from 'lucide-react-native';
+import { GraduationCap, Library, Plus } from 'lucide-react-native';
 import { useState } from 'react';
 import { StyleSheet, View } from 'react-native';
 
@@ -33,15 +33,25 @@ export default function StudyScreen() {
     <Screen scroll tab>
       <ScreenHeader
         title="Study"
-        right={<IconButton icon={Plus} variant="soft" onPress={() => setAdding(true)} accessibilityLabel="New deck" />}
+        right={
+          <>
+            <IconButton icon={Library} onPress={() => router.push('/starter-decks')} accessibilityLabel="Starter decks" />
+            <IconButton icon={Plus} variant="soft" onPress={() => setAdding(true)} accessibilityLabel="New deck" />
+          </>
+        }
       />
 
       {data.decks.length === 0 ? (
         <EmptyState
           icon={GraduationCap}
           title="No study decks yet"
-          subtitle="Build a deck of verses to memorize. In the reader, select a verse and tap “Add to deck.”"
-          action={<Button icon={Plus} title="New deck" onPress={() => setAdding(true)} />}
+          subtitle="Add a ready-made starter deck, or build your own — in the reader, select a verse and tap “Add to deck.”"
+          action={
+            <View style={{ gap: Spacing.two, alignItems: 'center' }}>
+              <Button icon={Library} title="Browse starter decks" onPress={() => router.push('/starter-decks')} />
+              <Button variant="ghost" icon={Plus} title="New deck" onPress={() => setAdding(true)} />
+            </View>
+          }
         />
       ) : (
         data.decks.map((d) => {

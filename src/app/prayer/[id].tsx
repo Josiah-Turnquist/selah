@@ -1,9 +1,11 @@
 import * as Clipboard from 'expo-clipboard';
 import { router, useLocalSearchParams } from 'expo-router';
-import { Check, ChevronLeft, Flame, Plus, Settings2, Share2, Trash2 } from 'lucide-react-native';
+import { Check, ChevronLeft, Flame, Plus, Settings2, Share2, Sparkles, Trash2 } from 'lucide-react-native';
 import { useState } from 'react';
-import { Pressable, ScrollView, Share, StyleSheet, View } from 'react-native';
+import { Pressable, ScrollView, Share, StyleSheet, Switch, View } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
+
+import { cancelListReminder, ensureNotificationPermission, formatHour, scheduleListReminder } from '@/lib/notifications';
 
 import { ThemedText } from '@/components/themed-text';
 import { TextField } from '@/components/ui/field';
@@ -45,7 +47,24 @@ export default function PrayerDetail() {
     );
   }
 
-  const prayedCount = list.items.filter((it) => isPrayedThisCycle(it.prayed, list.cycle)).length;
+  const active = list.items.filter((it) => !it.answered);
+  const prayedCount = active.filter((it) => isPrayedThisCycle(it.prayed, list.cycle)).length;
+
+  const setReminder = async (hour: number | null) => {
+    if (hour == null) {
+      await cancelListReminder(list.id);
+      actions.setListReminder(list.id, null);
+      return;
+    }
+    const ok = await ensureNotificationPermission();
+    if (!ok) {
+      toast('Allow notifications to get reminders');
+      return;
+    }
+    await scheduleListReminder(list.id, list.title, hour, active.map((it) => it.text));
+    actions.setListReminder(list.id, hour);
+  };
+
   const code = shareLink({
     t: 'prayer',
     from: data.settings.displayName,
@@ -88,7 +107,7 @@ export default function PrayerDetail() {
         <View style={styles.statsRow}>
           <Pill tone="ember" label={cycleLabel(list.cycle)} />
           <ThemedText type="small" themeColor="textSecondary">
-            {prayedCount}/{list.items.length} prayed this {list.cycle === 'daily' ? 'day' : 'week'}
+            {prayedCount}/{active.length} prayed this {list.cycle === 'daily' ? 'day' : 'week'}
           </ThemedText>
         </View>
 
@@ -102,7 +121,7 @@ export default function PrayerDetail() {
         />
 
         <View style={styles.items}>
-          {list.items.map((it) => {
+          {active.map((it) => {
             const prayed = isPrayedThisCycle(it.prayed, list.cycle);
             const streak = currentStreak(it.prayed, list.cycle);
             return (
@@ -113,7 +132,7 @@ export default function PrayerDetail() {
                     actions.togglePrayed(list.id, it.id);
                     if (willPray) {
                       tapSuccess();
-                      if (list.items.length > 1 && prayedCount + 1 === list.items.length) {
+                      if (active.length > 1 && prayedCount + 1 === active.length) {
                         toast('Prayed through your list');
                       }
                     }
@@ -206,6 +225,19 @@ export default function PrayerDetail() {
           />
           <Button title="Save" style={{ flex: 1 }} onPress={saveEdit} />
         </View>
+        <Button
+          variant="ghost"
+          icon={Sparkles}
+          title="Mark as answered"
+          onPress={() => {
+            if (editing) {
+              actions.setPrayerAnswered(list.id, editing, true);
+              tapSuccess();
+              toast('Moved to Answered');
+            }
+            setEditing(null);
+          }}
+        />
       </Sheet>
 
       <Sheet visible={manage} onClose={() => setManage(false)} title="List settings">
@@ -217,6 +249,31 @@ export default function PrayerDetail() {
             setManage(false);
           }}
         />
+
+        <View style={styles.reminderBlock}>
+          <View style={styles.reminderRow}>
+            <View style={{ flex: 1 }}>
+              <ThemedText type="h3">Daily reminder</ThemedText>
+              <ThemedText type="caption" themeColor="textSecondary">
+                A nudge that quotes one of these prayers
+              </ThemedText>
+            </View>
+            <Switch
+              value={list.reminderHour != null}
+              onValueChange={(on) => setReminder(on ? (list.reminderHour ?? 8) : null)}
+              trackColor={{ true: theme.ember, false: theme.backgroundSelected }}
+              thumbColor={theme.card}
+            />
+          </View>
+          {list.reminderHour != null ? (
+            <View style={styles.hourRow}>
+              <Button variant="secondary" title="−" onPress={() => setReminder((list.reminderHour! + 23) % 24)} />
+              <ThemedText type="h3">{formatHour(list.reminderHour)}</ThemedText>
+              <Button variant="secondary" title="+" onPress={() => setReminder((list.reminderHour! + 1) % 24)} />
+            </View>
+          ) : null}
+        </View>
+
         <ConfirmButton
           variant="ghost"
           icon={Trash2}
@@ -298,5 +355,8 @@ const styles = StyleSheet.create({
   },
   check: { width: 26, height: 26, borderRadius: Radius.pill, borderWidth: 2, alignItems: 'center', justifyContent: 'center' },
   streak: { flexDirection: 'row', alignItems: 'center', gap: 3 },
+  reminderBlock: { gap: Spacing.three, marginTop: Spacing.two, marginBottom: Spacing.two },
+  reminderRow: { flexDirection: 'row', alignItems: 'center', gap: Spacing.three },
+  hourRow: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between' },
   codeBox: { padding: Spacing.three, borderRadius: Radius.md, borderWidth: StyleSheet.hairlineWidth },
 });
