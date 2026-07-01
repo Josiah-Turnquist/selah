@@ -388,25 +388,37 @@ export default function ReaderScreen() {
       return next;
     });
 
-  // A small StickyNote button that trails a verse which has a note; tapping it
-  // collapses or expands that note. It sits just after the verse (aligned with
-  // the note block) rather than inline — RN can't put an SVG inside flowing <Text>.
-  const noteToggle = (verse: number) => (
-    <Pressable
+  // A small StickyNote that sits inline at the end of a verse which has a note;
+  // tapping it collapses or expands that note. On iOS an SVG renders inside
+  // <Text> as an inline view, so it flows after the last word. Muted when the
+  // note is collapsed, accent-coloured when it's open.
+  const noteMarker = (verse: number) => (
+    <ThemedText
       onPress={() => toggleNote(verse)}
-      hitSlop={8}
+      suppressHighlighting
       accessibilityRole="button"
-      accessibilityLabel={openNotes.has(verse) ? 'Hide note' : 'Show note'}
-      style={styles.noteToggle}>
-      <StickyNote size={15} color={openNotes.has(verse) ? theme.accent : theme.textTertiary} />
-    </Pressable>
+      accessibilityLabel={openNotes.has(verse) ? 'Hide note' : 'Show note'}>
+      {' '}
+      <StickyNote
+        size={13 * scale}
+        color={openNotes.has(verse) ? theme.accent : theme.textTertiary}
+        style={{ transform: [{ translateY: -5 }, { translateX: 1 }] }}
+      />
+    </ThemedText>
   );
 
   // A verse's body as block lines: a hanging verse-number gutter beside a column
   // of poetic lines. Each line is its own block so highlights round + pad, and
   // Selah sits right-aligned on its own line.
-  const renderLines = (v: Verse, hl?: (typeof HIGHLIGHT_COLORS)[number]) => {
+  const renderLines = (v: Verse, hl?: (typeof HIGHLIGHT_COLORS)[number], marker?: ReactNode) => {
     const numberLine = v.lines.findIndex((l) => l.text.length > 0);
+    let lastLine = -1;
+    for (let i = v.lines.length - 1; i >= 0; i--) {
+      if (v.lines[i].text.length > 0) {
+        lastLine = i;
+        break;
+      }
+    }
     return (
       <View style={styles.lineRow}>
         <ThemedText style={[verseNumStyle, { width: 24 * scale }]}>{numberLine >= 0 ? v.verse : ''}</ThemedText>
@@ -424,10 +436,12 @@ export default function ReaderScreen() {
                         {ln.text}
                       </ThemedText>
                     </View>
+                    {li === lastLine ? marker : null}
                   </View>
                 ) : (
                   <ThemedText type="bodySerif" style={bodyLineStyle}>
                     {ln.text}
+                    {li === lastLine ? marker : null}
                   </ThemedText>
                 )
               ) : null}
@@ -457,7 +471,7 @@ export default function ReaderScreen() {
         key={`vb-${v.verse}`}
         onPress={() => toggleVerse(v.verse)}
         style={[styles.verseRow, active && { backgroundColor: theme.accentSoft }]}>
-        {renderLines(v, hl?.color)}
+        {renderLines(v, hl?.color, chapterNotes.has(v.verse) ? noteMarker(v.verse) : undefined)}
         {hasCompare ? (
           <ThemedText
             type="bodySerif"
@@ -507,7 +521,6 @@ export default function ReaderScreen() {
         }}>
         {renderHeadings(v.headings)}
         {renderVerseBlock(v)}
-        {note ? noteToggle(v.verse) : null}
         {note && openNotes.has(v.verse) ? renderNote(note) : null}
       </View>
     );
@@ -549,6 +562,7 @@ export default function ReaderScreen() {
           style={factive ? { backgroundColor: theme.accentSoft } : undefined}>
           <ThemedText style={verseNumStyle}>{v.verse} </ThemedText>
           <ThemedText style={[bodyLineStyle, fhl && { backgroundColor: highlightBg(fhl.color, scheme) }]}>{body}</ThemedText>
+          {chapterNotes.has(v.verse) ? noteMarker(v.verse) : null}
           {'  '}
         </ThemedText>,
       );
@@ -558,7 +572,6 @@ export default function ReaderScreen() {
       <View key={`seg-${si}`} style={{ marginBottom: Spacing.three }}>
         {renderHeadings(seg.verses[0]?.headings ?? [])}
         {blocks}
-        {seg.note ? noteToggle(seg.note.verse) : null}
         {seg.note && openNotes.has(seg.note.verse) ? renderNote(seg.note) : null}
       </View>
     );
@@ -828,7 +841,6 @@ const styles = StyleSheet.create({
   sectionHeading: { fontFamily: Fonts.serif, fontWeight: '600', marginTop: Spacing.three, marginBottom: Spacing.one, paddingHorizontal: 6, letterSpacing: -0.2 },
   selah: { textAlign: 'right', fontStyle: 'italic', marginTop: 2, marginBottom: 4 },
   compareText: { marginTop: 6, marginBottom: 2, paddingLeft: 12, borderLeftWidth: 2 },
-  noteToggle: { alignSelf: 'flex-start', marginLeft: 14, marginTop: 2, padding: 4 },
   noteBlock: {
     marginLeft: 14,
     marginTop: 4,
