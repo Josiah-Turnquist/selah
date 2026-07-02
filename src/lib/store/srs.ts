@@ -13,7 +13,9 @@ export function intervalDaysForBox(box: number): number {
 }
 
 export function applyGrade(card: Card, grade: Grade, now: number = Date.now()): Card {
-  let box = card.box;
+  // Legacy/imported cards can lack a numeric box; treat them as box 1 rather
+  // than letting NaN poison the schedule.
+  let box = Number.isFinite(card.box) ? card.box : 1;
   if (grade === 'again') box = 1;
   else if (grade === 'good') box = Math.min(5, box + 1);
   else box = Math.min(5, box + 2);
@@ -23,6 +25,17 @@ export function applyGrade(card: Card, grade: Grade, now: number = Date.now()): 
     reviews: card.reviews + 1,
     due: now + intervalDaysForBox(box) * DAY,
   };
+}
+
+/**
+ * Human names for the five Leitner boxes — shown everywhere instead of raw
+ * numbers. A card climbs New → Learning → Familiar → Strong → Known as it's
+ * reviewed successfully, and drops back to New when missed.
+ */
+export const STAGES = ['New', 'Learning', 'Familiar', 'Strong', 'Known'] as const;
+
+export function stageLabel(box: number): string {
+  return STAGES[Math.max(1, Math.min(5, Math.round(box) || 1)) - 1];
 }
 
 export function isDue(card: Card, now: number = Date.now()): boolean {
