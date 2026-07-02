@@ -23,6 +23,7 @@ export type ColorSet = {
   ember: string;
   emberSoft: string;
   success: string;
+  successSoft: string;
   danger: string;
 };
 
@@ -32,8 +33,8 @@ export type PaletteId = 'mono' | 'forest' | 'slate' | 'clay';
 export type Appearance = 'system' | 'light' | 'dark';
 
 // Shared semantic colors (prayer "ember", success, danger) — consistent across palettes.
-const semLight = { ember: '#C2683C', emberSoft: '#F4E7DD', success: '#3E8E5A', danger: '#BE4434' };
-const semDark = { ember: '#E0975E', emberSoft: '#382819', success: '#67C98A', danger: '#E8705C' };
+const semLight = { ember: '#C2683C', emberSoft: '#F4E7DD', success: '#3E8E5A', successSoft: '#E2EFE6', danger: '#BE4434' };
+const semDark = { ember: '#E0975E', emberSoft: '#382819', success: '#67C98A', successSoft: '#1C2E22', danger: '#E8705C' };
 
 const make = (light: ColorSet, dark: ColorSet) => ({ light, dark });
 

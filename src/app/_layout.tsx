@@ -6,6 +6,7 @@ import { SafeAreaProvider } from 'react-native-safe-area-context';
 
 import { CelebrationWatcher } from '@/components/celebration-watcher';
 import { ReminderSync } from '@/components/reminder-sync';
+import { SyncManager } from '@/components/sync-manager';
 import { CelebrationProvider } from '@/components/ui/celebrate';
 import { ToastProvider } from '@/components/ui/toast';
 import { useColorSchemeEffective, useTheme } from '@/hooks/use-theme';
@@ -38,6 +39,7 @@ export default function RootLayout() {
           <ToastProvider>
             <CelebrationWatcher />
             <ReminderSync />
+            <SyncManager />
             <ThemedChrome />
           </ToastProvider>
         </CelebrationProvider>

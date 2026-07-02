@@ -1,6 +1,6 @@
 import { router } from 'expo-router';
 import { ChevronLeft, Highlighter, StickyNote, Trash2, X } from 'lucide-react-native';
-import { useState } from 'react';
+import { useEffect, useState } from 'react';
 import { Pressable, ScrollView, StyleSheet, View } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 
@@ -21,6 +21,13 @@ export default function NotesScreen() {
   const actions = useActions();
   const theme = useTheme();
   const [tab, setTab] = useState<'notes' | 'highlights'>('notes');
+  // Two-tap delete: first tap arms (icon turns red), second within 3s deletes.
+  const [confirmId, setConfirmId] = useState<string | null>(null);
+  useEffect(() => {
+    if (!confirmId) return;
+    const t = setTimeout(() => setConfirmId(null), 3000);
+    return () => clearTimeout(t);
+  }, [confirmId]);
 
   const highlights = Object.entries(data.highlights)
     .map(([key, h]) => ({ key, ref: parseRefKey(key), color: h.color, createdAt: h.createdAt }))
@@ -67,8 +74,24 @@ export default function NotesScreen() {
                   <ThemedText type="caption" themeColor="accent">
                     {formatRef(n.bookId, n.chapter, n.verse)}
                   </ThemedText>
-                  <Pressable onPress={() => actions.deleteNote(n.id)} hitSlop={8} accessibilityLabel="Delete note">
-                    <Trash2 size={16} color={theme.textTertiary} />
+                  <Pressable
+                    onPress={() => {
+                      if (confirmId === n.id) {
+                        actions.deleteNote(n.id);
+                        setConfirmId(null);
+                      } else {
+                        setConfirmId(n.id);
+                      }
+                    }}
+                    hitSlop={8}
+                    accessibilityLabel={confirmId === n.id ? 'Tap again to delete note' : 'Delete note'}
+                    style={styles.deleteTap}>
+                    {confirmId === n.id ? (
+                      <ThemedText type="caption" themeColor="danger">
+                        Tap to confirm
+                      </ThemedText>
+                    ) : null}
+                    <Trash2 size={16} color={confirmId === n.id ? theme.danger : theme.textTertiary} />
                   </Pressable>
                 </View>
                 <ThemedText type="body" style={{ marginTop: 4 }}>
@@ -128,6 +151,7 @@ const styles = StyleSheet.create({
   },
   noteCard: { padding: Spacing.four, borderRadius: Radius.md, borderWidth: StyleSheet.hairlineWidth },
   noteHead: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between' },
+  deleteTap: { flexDirection: 'row', alignItems: 'center', gap: Spacing.one },
   hlRow: { flexDirection: 'row', alignItems: 'center', gap: Spacing.three, paddingVertical: Spacing.three, borderBottomWidth: StyleSheet.hairlineWidth },
   swatchDot: { width: 18, height: 18, borderRadius: Radius.pill },
 });

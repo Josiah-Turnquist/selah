@@ -7,7 +7,7 @@ import { addDays, localDayKey } from '@/lib/util/date';
 import { uid } from '@/lib/util/id';
 
 import { PRESET_DECKS, presetToDeck } from './preset-decks';
-import type { AppData, Card, CardRef, Deck, Friend, PlanProgress, PrayerList } from './types';
+import type { AppData, Card, CardRef, Deck, PlanProgress, PrayerList } from './types';
 import { DATA_VERSION } from './types';
 
 export function defaultData(): AppData {
@@ -26,12 +26,6 @@ export function defaultData(): AppData {
     startedAt: localDayKey(planStart),
     completedDays,
   };
-
-  const friends: Friend[] = [
-    { id: uid('fr_'), name: 'Hannah', planTitle: 'Bible in a Year', completedDays: 168, durationDays: 365, lastActiveDayKey: localDayKey(today) },
-    { id: uid('fr_'), name: 'Marcus', planTitle: 'New Testament in 90 Days', completedDays: 41, durationDays: 90, lastActiveDayKey: localDayKey(addDays(today, -1)) },
-    { id: uid('fr_'), name: 'Grace', planTitle: 'Gospels in 30 Days', completedDays: 11, durationDays: 30, lastActiveDayKey: localDayKey(today) },
-  ];
 
   const dailyPrayers: PrayerList = {
     id: uid('pl_'),
@@ -116,7 +110,8 @@ export function defaultData(): AppData {
     plans: [plan],
     prayerLists: [dailyPrayers, peoplePrayers],
     decks: [memoryVerses, apostles],
-    friends,
+    friends: [],
     readDays: Array.from({ length: 5 }, (_, i) => localDayKey(addDays(today, -i))),
+    account: null,
   };
 }

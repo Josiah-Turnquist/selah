@@ -5,6 +5,7 @@ import { useState } from 'react';
 import { Pressable, ScrollView, Share, StyleSheet, Switch, View } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 
+import { NotificationWarning } from '@/components/notification-warning';
 import { cancelListReminder, ensureNotificationPermission, formatHour, scheduleListReminder } from '@/lib/notifications';
 
 import { ThemedText } from '@/components/themed-text';
@@ -272,6 +273,7 @@ export default function PrayerDetail() {
               <Button variant="secondary" title="+" onPress={() => setReminder((list.reminderHour! + 1) % 24)} />
             </View>
           ) : null}
+          <NotificationWarning active={list.reminderHour != null} />
         </View>
 
         <ConfirmButton

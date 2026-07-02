@@ -161,7 +161,7 @@ export function Pill({
     neutral: { bg: theme.backgroundElement, fg: theme.textSecondary },
     accent: { bg: theme.accentSoft, fg: theme.accent },
     ember: { bg: theme.emberSoft, fg: theme.ember },
-    success: { bg: theme.accentSoft, fg: theme.success },
+    success: { bg: theme.successSoft, fg: theme.success },
   } as const;
   const c = map[tone];
   return (
