@@ -34,7 +34,7 @@ import {
   type PrayerList,
   type ReaderWeight,
 } from '@/lib/store/types';
-import { localDayKey } from '@/lib/util/date';
+import { addDays, localDayKey } from '@/lib/util/date';
 import { uid } from '@/lib/util/id';
 
 const STORAGE_KEY = 'selah:data:v1';
@@ -103,6 +103,7 @@ export type Actions = {
   // reading plans
   startPlan: (template: PlanTemplate) => string;
   togglePlanDay: (planId: string, day: number) => void;
+  catchUpPlan: (planId: string) => void;
   leavePlan: (planId: string) => void;
   // prayer
   addPrayerList: (title: string, cycle: Cycle) => string;
@@ -281,6 +282,18 @@ export function StoreProvider({ children }: { children: ReactNode }) {
             if (completedDays[day]) delete completedDays[day];
             else completedDays[day] = localDayKey();
             return { ...pl, completedDays };
+          }),
+        })),
+      // Reset the pace expectation so today is the next reading day. History
+      // (startedAt, completedDays) is untouched — only the schedule anchor moves.
+      catchUpPlan: (planId) =>
+        update((p) => ({
+          ...p,
+          plans: p.plans.map((pl) => {
+            if (pl.id !== planId) return pl;
+            let nextDay = 1;
+            while (nextDay <= pl.durationDays && pl.completedDays[nextDay]) nextDay++;
+            return { ...pl, scheduleAnchor: localDayKey(addDays(new Date(), -(nextDay - 1))) };
           }),
         })),
       leavePlan: (planId) =>

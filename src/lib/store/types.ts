@@ -37,7 +37,10 @@ export type PlanProgress = {
   templateId: string;
   title: string;
   durationDays: number;
-  startedAt: string; // YYYY-MM-DD
+  startedAt: string; // YYYY-MM-DD — when the plan truly began; never rewritten
+  /** Schedule baseline (YYYY-MM-DD). "Catch me up" moves this so the pace
+   *  expectation resets without touching history; absent = startedAt. */
+  scheduleAnchor?: string;
   completedDays: Record<number, string>; // dayNumber -> dayKey it was completed
 };
 
