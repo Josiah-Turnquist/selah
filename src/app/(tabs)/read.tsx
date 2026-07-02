@@ -1,5 +1,5 @@
 import { router } from 'expo-router';
-import { BookOpen, ChevronDown, Flame, NotebookPen, Settings } from 'lucide-react-native';
+import { BookOpen, ChevronDown, Flame, NotebookPen, Search, Settings } from 'lucide-react-native';
 import { useEffect, useMemo, useState, type ReactNode } from 'react';
 import { Pressable, StyleSheet, View } from 'react-native';
 
@@ -53,6 +53,7 @@ export default function ReadScreen() {
         title="Read"
         right={
           <>
+            <IconButton icon={Search} onPress={() => router.push('/search')} accessibilityLabel="Search the Bible" />
             <IconButton icon={NotebookPen} onPress={() => router.push('/notes')} accessibilityLabel="Notes and highlights" />
             <IconButton icon={Settings} onPress={() => router.push('/settings')} accessibilityLabel="Settings" />
           </>

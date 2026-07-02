@@ -5,6 +5,7 @@ import { Pressable, ScrollView, StyleSheet, View } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 
 import { ThemedText } from '@/components/themed-text';
+import { TextField } from '@/components/ui/field';
 import { EmptyState, IconButton } from '@/components/ui/primitives';
 import { Segmented } from '@/components/ui/segmented';
 import { Highlights, MaxContentWidth, Radius, Spacing } from '@/constants/theme';
@@ -29,10 +30,20 @@ export default function NotesScreen() {
     return () => clearTimeout(t);
   }, [confirmId]);
 
+  const [filter, setFilter] = useState('');
+
   const highlights = Object.entries(data.highlights)
     .map(([key, h]) => ({ key, ref: parseRefKey(key), color: h.color, createdAt: h.createdAt }))
     .filter((e) => e.ref)
     .sort((a, b) => b.createdAt - a.createdAt);
+
+  const f = filter.trim().toLowerCase();
+  const matchRef = (bookId: number, chapter: number, verse: number) =>
+    formatRef(bookId, chapter, verse).toLowerCase().includes(f);
+  const visibleNotes = f
+    ? data.notes.filter((n) => n.text.toLowerCase().includes(f) || matchRef(n.bookId, n.chapter, n.verse))
+    : data.notes;
+  const visibleHighlights = f ? highlights.filter((e) => e.ref && matchRef(e.ref.bookId, e.ref.chapter, e.ref.verse)) : highlights;
 
   return (
     <View style={[styles.flex, { backgroundColor: theme.background }]}>
@@ -52,6 +63,12 @@ export default function NotesScreen() {
             value={tab}
             onChange={setTab}
           />
+          <TextField
+            value={filter}
+            onChangeText={setFilter}
+            placeholder="Filter by words or reference…"
+            autoCorrect={false}
+          />
         </View>
       </SafeAreaView>
 
@@ -59,8 +76,12 @@ export default function NotesScreen() {
         {tab === 'notes' ? (
           data.notes.length === 0 ? (
             <EmptyState icon={StickyNote} title="No notes yet" subtitle="Select a verse in the reader and tap “Add note.”" />
+          ) : visibleNotes.length === 0 ? (
+            <ThemedText type="small" themeColor="textTertiary" style={styles.noMatch}>
+              No notes match “{filter.trim()}”
+            </ThemedText>
           ) : (
-            data.notes.map((n) => (
+            visibleNotes.map((n) => (
               <Pressable
                 key={n.id}
                 onPress={() => openVerse(n.bookId, n.chapter, n.verse)}
@@ -102,8 +123,12 @@ export default function NotesScreen() {
           )
         ) : highlights.length === 0 ? (
           <EmptyState icon={Highlighter} title="No highlights yet" subtitle="Select a verse in the reader and choose a highlight color." />
+        ) : visibleHighlights.length === 0 ? (
+          <ThemedText type="small" themeColor="textTertiary" style={styles.noMatch}>
+            No highlights match “{filter.trim()}”
+          </ThemedText>
         ) : (
-          highlights.map((e) => (
+          visibleHighlights.map((e) => (
             <Pressable
               key={e.key}
               onPress={() => e.ref && openVerse(e.ref.bookId, e.ref.chapter, e.ref.verse)}
@@ -139,7 +164,8 @@ const styles = StyleSheet.create({
     maxWidth: MaxContentWidth,
     alignSelf: 'center',
   },
-  segWrap: { paddingHorizontal: Spacing.four, paddingBottom: Spacing.two, width: '100%', maxWidth: MaxContentWidth, alignSelf: 'center' },
+  segWrap: { paddingHorizontal: Spacing.four, paddingBottom: Spacing.two, gap: Spacing.two, width: '100%', maxWidth: MaxContentWidth, alignSelf: 'center' },
+  noMatch: { textAlign: 'center', paddingTop: Spacing.six },
   content: {
     paddingHorizontal: Spacing.four,
     paddingTop: Spacing.two,
