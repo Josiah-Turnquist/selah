@@ -34,7 +34,8 @@ export default function StarterDecks() {
               <Button
                 size="sm"
                 variant={added ? 'secondary' : 'primary'}
-                title={added ? 'Add again' : 'Add deck'}
+                title={added ? 'Added' : 'Add deck'}
+                disabled={added}
                 onPress={() => {
                   actions.addPresetDeck(p);
                   tapSuccess();

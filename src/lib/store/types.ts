@@ -41,7 +41,8 @@ export type PlanProgress = {
   completedDays: Record<number, string>; // dayNumber -> dayKey it was completed
 };
 
-/** A friend's shared progress snapshot (local-first: seeded or imported by code). */
+/** A friend's shared progress snapshot, synced from the Selah API and cached
+ *  locally so the Plans tab renders offline. */
 export type Friend = {
   id: string;
   name: string;
@@ -49,6 +50,17 @@ export type Friend = {
   completedDays: number;
   durationDays: number;
   lastActiveDayKey: string;
+};
+
+/** Anonymous sync account (friends + weekly backups). No email, no password —
+ *  a uuid + secret minted by the API on first sync, plus a short friend code.
+ *  The recovery code shown in Settings is `userId.secret`. */
+export type Account = {
+  userId: string;
+  secret: string;
+  friendCode: string;
+  lastBackupAt?: string; // YYYY-MM-DD of the last successful backup upload
+  lastSyncAt?: number;
 };
 
 export type PrayerItem = {
@@ -106,6 +118,7 @@ export type AppData = {
   decks: Deck[];
   friends: Friend[];
   readDays: string[]; // YYYY-MM-DD days a chapter was opened
+  account?: Account | null; // anonymous sync identity; null until first sync
 };
 
 export const DATA_VERSION = 1;

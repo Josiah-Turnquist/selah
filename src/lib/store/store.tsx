@@ -14,7 +14,7 @@ import {
   useState,
   type ReactNode,
 } from 'react';
-import { ActivityIndicator, StyleSheet, useColorScheme, View } from 'react-native';
+import { ActivityIndicator, AppState, StyleSheet, useColorScheme, View } from 'react-native';
 
 import { Colors, DEFAULT_PALETTE, type Appearance, type HighlightColor, type PaletteId } from '@/constants/theme';
 import { refKey } from '@/lib/bible/refs';
@@ -25,10 +25,12 @@ import { defaultData } from '@/lib/store/seed';
 import { applyGrade, type Grade } from '@/lib/store/srs';
 import {
   DATA_VERSION,
+  type Account,
   type AppData,
   type CardRef,
   type Deck,
   type DeckKind,
+  type Friend,
   type PrayerList,
   type ReaderWeight,
 } from '@/lib/store/types';
@@ -46,15 +48,8 @@ const STORAGE_KEY = 'selah:data:v1';
  * older records. Settings are the one place we deep-merge so newly added toggles
  * get sane defaults.
  */
-function hydrate(raw: string | null): AppData {
+function hydrateParsed(p: any): AppData {
   const base = defaultData();
-  if (!raw) return base;
-  let p: any;
-  try {
-    p = JSON.parse(raw);
-  } catch {
-    return base; // unparseable — there's nothing to preserve
-  }
   if (!p || typeof p !== 'object') return base;
   return {
     version: DATA_VERSION,
@@ -65,9 +60,26 @@ function hydrate(raw: string | null): AppData {
     plans: Array.isArray(p.plans) ? p.plans : [],
     prayerLists: Array.isArray(p.prayerLists) ? p.prayerLists : base.prayerLists,
     decks: Array.isArray(p.decks) ? p.decks : base.decks,
-    friends: Array.isArray(p.friends) ? p.friends : base.friends,
+    // Drop the pre-backend demo friends ("fr_" ids) — real friends come from the
+    // API with server uuids and are cached here.
+    friends: (Array.isArray(p.friends) ? p.friends : []).filter(
+      (f: any) => !String(f?.id ?? '').startsWith('fr_'),
+    ),
     readDays: Array.isArray(p.readDays) ? p.readDays : [],
+    account: p.account && typeof p.account === 'object' ? p.account : null,
   };
+}
+
+function hydrate(raw: string | null): AppData {
+  if (!raw) return defaultData();
+  try {
+    return hydrateParsed(JSON.parse(raw));
+  } catch {
+    // Unreadable — stash the raw blob under a recovery key instead of silently
+    // discarding what may be someone's notes and prayers, then start fresh.
+    AsyncStorage.setItem(`${STORAGE_KEY}:corrupt`, raw).catch(() => {});
+    return defaultData();
+  }
 }
 
 export type Actions = {
@@ -112,6 +124,10 @@ export type Actions = {
   updateCard: (deckId: string, cardId: string, patch: { front?: string; back?: string }) => void;
   deleteCard: (deckId: string, cardId: string) => void;
   reviewCard: (deckId: string, cardId: string, grade: Grade) => void;
+  // sync (friends + backups)
+  setAccount: (account: Account | null) => void;
+  setFriends: (friends: Friend[]) => void;
+  restoreFromBackup: (data: unknown, account: Account) => void;
   // danger zone
   resetEverything: () => void;
 };
@@ -148,12 +164,27 @@ export function StoreProvider({ children }: { children: ReactNode }) {
     if (!data) return;
     if (saveTimer.current) clearTimeout(saveTimer.current);
     saveTimer.current = setTimeout(() => {
+      saveTimer.current = null;
       AsyncStorage.setItem(STORAGE_KEY, JSON.stringify(data)).catch(() => {});
     }, 250);
     return () => {
       if (saveTimer.current) clearTimeout(saveTimer.current);
     };
   }, [data]);
+
+  // Flush any pending debounced write the moment the app leaves the foreground —
+  // a force-quit right after an edit must not lose it.
+  useEffect(() => {
+    const sub = AppState.addEventListener('change', (state) => {
+      if (state !== 'background' && state !== 'inactive') return;
+      if (!saveTimer.current) return;
+      clearTimeout(saveTimer.current);
+      saveTimer.current = null;
+      const d = dataRef.current;
+      if (d) AsyncStorage.setItem(STORAGE_KEY, JSON.stringify(d)).catch(() => {});
+    });
+    return () => sub.remove();
+  }, []);
 
   const actions = useMemo<Actions>(() => {
     const update = (fn: (prev: AppData) => AppData) => setData((p) => (p ? fn(p) : p));
@@ -423,6 +454,13 @@ export function StoreProvider({ children }: { children: ReactNode }) {
               : d,
           ),
         })),
+
+      setAccount: (account) => update((p) => ({ ...p, account })),
+      setFriends: (friends) => update((p) => ({ ...p, friends })),
+      // Replace this device's data with a server backup, keeping the account the
+      // restore was performed with. Runs through the same field-by-field guards
+      // as launch hydration so a malformed backup can't corrupt the store.
+      restoreFromBackup: (data, account) => setData({ ...hydrateParsed(data), account }),
 
       resetEverything: () => setData(defaultData()),
     };

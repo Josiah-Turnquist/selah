@@ -19,6 +19,13 @@ const notif = (): typeof import('expo-notifications') => require('expo-notificat
 const READING_ID = 'daily-reading';
 const listReminderId = (id: string) => `prayer-list-${id}`;
 
+/** Current permission state without prompting — for "reminders are blocked" UI. */
+export async function notificationsGranted(): Promise<boolean> {
+  if (!native) return false;
+  const current = await notif().getPermissionsAsync();
+  return current.granted;
+}
+
 export async function ensureNotificationPermission(): Promise<boolean> {
   if (!native) return false;
   const N = notif();

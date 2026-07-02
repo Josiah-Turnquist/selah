@@ -4,8 +4,20 @@ import { useState, type ReactNode } from 'react';
 import { Platform, Pressable, ScrollView, StyleSheet, Switch, View } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 
+import * as Clipboard from 'expo-clipboard';
+
+import { NotificationWarning } from '@/components/notification-warning';
 import { ThemedText } from '@/components/themed-text';
 import { TranslationSheet } from '@/components/translation-sheet';
+import {
+  apiConfigured,
+  createAccount,
+  fetchBackup,
+  parseRecoveryCode,
+  recoveryCode,
+  uploadBackup,
+} from '@/lib/api/client';
+import { localDayKey } from '@/lib/util/date';
 import { TextField } from '@/components/ui/field';
 import { Segmented } from '@/components/ui/segmented';
 import { Button, Card, IconButton } from '@/components/ui/primitives';
@@ -30,6 +42,70 @@ export default function Settings() {
   const scale = data.settings.readerFontScale;
   const toast = useToast();
   const reminderHour = data.settings.reminderHour;
+  const account = data.account ?? null;
+
+  const [showRestore, setShowRestore] = useState(false);
+  const [restoreCode, setRestoreCode] = useState('');
+  const [busyRestore, setBusyRestore] = useState(false);
+  const [found, setFound] = useState<{ createdAt: string; data: unknown } | null>(null);
+
+  const backupNow = async () => {
+    try {
+      let a = account;
+      if (!a) {
+        a = await createAccount(data.settings.displayName || 'Friend');
+        actions.setAccount(a);
+      }
+      await uploadBackup(a, data);
+      actions.setAccount({ ...a, lastBackupAt: localDayKey() });
+      toast('Backed up');
+    } catch {
+      toast('Couldn’t back up — try again later');
+    }
+  };
+
+  const copyRecovery = () => {
+    if (!account) {
+      toast('Connecting — try again in a moment');
+      return;
+    }
+    Clipboard.setStringAsync(recoveryCode(account));
+    toast('Recovery code copied — keep it safe');
+  };
+
+  const findBackup = async () => {
+    const creds = parseRecoveryCode(restoreCode);
+    if (!creds) {
+      toast('That doesn’t look like a recovery code');
+      return;
+    }
+    setBusyRestore(true);
+    try {
+      const backup = await fetchBackup(creds);
+      if (!backup) toast('No backup found for that code');
+      else setFound(backup);
+    } catch {
+      toast('Couldn’t reach the backup — check the code');
+    } finally {
+      setBusyRestore(false);
+    }
+  };
+
+  const doRestore = () => {
+    const creds = parseRecoveryCode(restoreCode);
+    if (!creds || !found) return;
+    const backedUp = (found.data as any)?.account;
+    actions.restoreFromBackup(found.data, {
+      userId: creds.userId,
+      secret: creds.secret,
+      friendCode: backedUp?.friendCode ?? '',
+      lastBackupAt: backedUp?.lastBackupAt,
+    });
+    setShowRestore(false);
+    setFound(null);
+    setRestoreCode('');
+    toast('Restored from backup');
+  };
 
   const setReminder = async (hour: number | null) => {
     if (hour == null) {
@@ -167,7 +243,31 @@ export default function Settings() {
               <Button variant="secondary" title="+" onPress={() => setReminder((reminderHour + 1) % 24)} />
             </View>
           ) : null}
+          <NotificationWarning active={reminderHour != null} />
         </Card>
+
+        {apiConfigured() ? (
+          <>
+            <Label>Backup</Label>
+            <Card>
+              <Row k="Weekly backup" v={account?.lastBackupAt ? `Last: ${account.lastBackupAt}` : 'Not yet'} />
+              {account ? <Row k="Friend code" v={account.friendCode} /> : null}
+              <View style={{ flexDirection: 'row', gap: Spacing.two, marginTop: Spacing.three }}>
+                <Button size="sm" variant="secondary" title="Back up now" style={{ flex: 1 }} onPress={backupNow} />
+                <Button size="sm" variant="secondary" title="Copy recovery code" style={{ flex: 1 }} onPress={copyRecovery} />
+              </View>
+              <ThemedText type="caption" themeColor="textTertiary" style={{ marginTop: Spacing.two }}>
+                Your data backs up privately once a week. Save the recovery code somewhere safe — it restores
+                everything on a new phone.
+              </ThemedText>
+            </Card>
+            <Pressable onPress={() => setShowRestore(true)} style={styles.restoreLink}>
+              <ThemedText type="small" themeColor="accent">
+                Restore from a recovery code
+              </ThemedText>
+            </Pressable>
+          </>
+        ) : null}
 
         <Label>About</Label>
         <Card>
@@ -192,6 +292,42 @@ export default function Settings() {
         value={data.settings.translation}
         onSelect={actions.setTranslation}
       />
+
+      <Sheet
+        visible={showRestore}
+        onClose={() => {
+          setShowRestore(false);
+          setFound(null);
+        }}
+        title="Restore from backup">
+        {found ? (
+          <>
+            <ThemedText type="small" themeColor="textSecondary">
+              Found a backup from {new Date(found.createdAt).toLocaleDateString()}. Restoring replaces everything
+              currently on this device.
+            </ThemedText>
+            <View style={{ flexDirection: 'row', gap: Spacing.two }}>
+              <Button variant="secondary" title="Cancel" style={{ flex: 1 }} onPress={() => setFound(null)} />
+              <Button variant="danger" title="Replace & restore" style={{ flex: 1 }} onPress={doRestore} />
+            </View>
+          </>
+        ) : (
+          <>
+            <ThemedText type="small" themeColor="textSecondary">
+              Paste the recovery code from your old phone to bring back its latest weekly backup.
+            </ThemedText>
+            <TextField
+              label="Recovery code"
+              value={restoreCode}
+              onChangeText={setRestoreCode}
+              autoCapitalize="none"
+              autoCorrect={false}
+              placeholder="xxxxxxxx-….yyyyyyyy"
+            />
+            <Button title={busyRestore ? 'Looking…' : 'Find backup'} disabled={!restoreCode.trim() || busyRestore} onPress={findBackup} />
+          </>
+        )}
+      </Sheet>
 
       <Sheet visible={confirm} onClose={() => setConfirm(false)} title="Reset everything?">
         <ThemedText type="small" themeColor="textSecondary">
@@ -270,5 +406,6 @@ const styles = StyleSheet.create({
   fontRow: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between' },
   reminderRow: { flexDirection: 'row', alignItems: 'center', gap: Spacing.three },
   kv: { flexDirection: 'row', justifyContent: 'space-between', paddingVertical: 4 },
+  restoreLink: { paddingVertical: Spacing.two, alignItems: 'center', marginTop: Spacing.two },
   reset: { paddingVertical: Spacing.three, alignItems: 'center', marginTop: Spacing.six },
 });
