@@ -7,6 +7,7 @@ import { SafeAreaView } from 'react-native-safe-area-context';
 import * as Clipboard from 'expo-clipboard';
 
 import { NotificationWarning } from '@/components/notification-warning';
+import { OfflineDownload } from '@/components/offline-download';
 import { ThemedText } from '@/components/themed-text';
 import { TranslationSheet } from '@/components/translation-sheet';
 import {
@@ -193,6 +194,9 @@ export default function Settings() {
             <ChevronRight size={20} color={theme.textSecondary} />
           </View>
         </Card>
+
+        <Label>Offline</Label>
+        <OfflineDownload />
 
         <Label>Reader text size</Label>
         <Card>

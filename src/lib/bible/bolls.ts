@@ -36,6 +36,9 @@ function cacheKey(translation: string, bookId: number, chapter: number): string 
   return `${CACHE_NS}:${translation}:${bookId}:${chapter}`;
 }
 
+/** Storage-key prefix for one translation's cached chapters (offline download). */
+export const cachePrefix = (translation: string) => `${CACHE_NS}:${translation}:`;
+
 /** fetch with an abort timeout so a hung request fails fast instead of loading forever. */
 async function fetchWithTimeout(url: string, ms = 12000): Promise<Response> {
   const controller = new AbortController();

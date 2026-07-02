@@ -46,9 +46,13 @@ function matchPercent(user: string, answer: string): number {
   return Math.round((hits / answerWords.length) * 100);
 }
 
+type Scope = 'new' | 'review' | 'all' | 'due';
+
 export default function StudySession() {
-  const params = useLocalSearchParams<{ id: string; mode?: string }>();
+  const params = useLocalSearchParams<{ id: string; mode?: string; scope?: string }>();
   const mode: Mode = params.mode === 'choice' ? 'choice' : params.mode === 'type' ? 'type' : 'flashcards';
+  const scope: Scope =
+    params.scope === 'new' || params.scope === 'review' || params.scope === 'all' ? params.scope : 'due';
   const data = useData();
   const actions = useActions();
   const theme = useTheme();
@@ -57,10 +61,20 @@ export default function StudySession() {
   const order = useMemo(() => {
     if (!deck) return [] as string[];
     const now = Date.now();
-    const due = deck.cards.filter((c) => isDue(c, now)).map((c) => c.id);
-    return shuffle(due.length ? due : deck.cards.map((c) => c.id));
+    const pool =
+      scope === 'new'
+        ? deck.cards.filter((c) => c.reviews === 0)
+        : scope === 'review'
+          ? deck.cards.filter((c) => isDue(c, now) && c.reviews > 0)
+          : scope === 'all'
+            ? deck.cards
+            : deck.cards.filter((c) => isDue(c, now));
+    // Legacy default keeps its fallback (nothing due → review everything); an
+    // explicitly chosen empty scope stays empty and shows "Nothing to study".
+    if (scope === 'due' && pool.length === 0) return shuffle(deck.cards.map((c) => c.id));
+    return shuffle(pool.map((c) => c.id));
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [params.id]);
+  }, [params.id, scope]);
 
   const cards = useMemo(
     () => order.map((cid) => deck?.cards.find((c) => c.id === cid)).filter((c): c is Card => !!c),
