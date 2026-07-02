@@ -11,7 +11,7 @@ import { ConfirmButton } from '@/components/ui/confirm-button';
 import { Sheet } from '@/components/ui/sheet';
 import { MaxContentWidth, Radius, Spacing } from '@/constants/theme';
 import { Segmented } from '@/components/ui/segmented';
-import { dueCount, isDue } from '@/lib/store/srs';
+import { STAGES, dueCount, isDue, stageLabel } from '@/lib/store/srs';
 import { useActions, useData } from '@/lib/store/store';
 import { useTheme } from '@/hooks/use-theme';
 
@@ -43,8 +43,13 @@ export default function DeckDetail() {
   const now = Date.now();
   const newCount = deck.cards.filter((c) => c.reviews === 0).length;
   const reviewCount = deck.cards.filter((c) => isDue(c, now) && c.reviews > 0).length;
-  const boxCounts = [1, 2, 3, 4, 5].map((b) => deck.cards.filter((c) => c.box === b).length);
-  const boxMax = Math.max(1, ...boxCounts);
+  const stageCounts = [1, 2, 3, 4, 5].map((b) => deck.cards.filter((c) => c.box === b).length);
+  const stageSummary = stageCounts
+    .map((n, i) => (n > 0 ? `${n} ${STAGES[i].toLowerCase()}` : null))
+    .filter(Boolean)
+    .join('  ·  ');
+  // Darker = more deeply known; the bar fills toward full accent as cards climb.
+  const stageAlpha = ['40', '66', '8C', 'BF', 'FF'];
 
   const submitCard = () => {
     if (!front.trim() || !back.trim()) return;
@@ -83,29 +88,18 @@ export default function DeckDetail() {
           </ThemedText>
         </View>
 
-        {deck.cards.length > 0 ? (
-          <View style={styles.boxStrip}>
-            {boxCounts.map((n, i) => (
-              <View key={i} style={styles.boxCol}>
-                <ThemedText type="caption" themeColor={n > 0 ? 'textSecondary' : 'textTertiary'}>
-                  {n}
-                </ThemedText>
-                <View
-                  style={[
-                    styles.boxBar,
-                    { height: 4 + Math.round((n / boxMax) * 22), backgroundColor: n > 0 ? theme.accent : theme.backgroundSelected },
-                  ]}
-                />
-                <ThemedText type="caption" themeColor="textTertiary">
-                  {i + 1}
-                </ThemedText>
-              </View>
-            ))}
-            <View style={{ flex: 1 }}>
-              <ThemedText type="caption" themeColor="textTertiary" style={{ textAlign: 'right' }}>
-                cards per box{'\n'}5 = learned
-              </ThemedText>
+        {deck.cards.length > 0 && stageCounts.some((n) => n > 0) ? (
+          <View style={styles.stageWrap}>
+            <View style={[styles.stageBar, { backgroundColor: theme.backgroundElement }]}>
+              {stageCounts.map((n, i) =>
+                n > 0 ? (
+                  <View key={i} style={{ flex: n, backgroundColor: theme.accent + stageAlpha[i] }} />
+                ) : null,
+              )}
             </View>
+            <ThemedText type="caption" themeColor="textSecondary">
+              {stageSummary}
+            </ThemedText>
           </View>
         ) : null}
 
@@ -144,6 +138,10 @@ export default function DeckDetail() {
                     style={[styles.dot, { backgroundColor: b <= c.box ? theme.accent : theme.backgroundSelected }]}
                   />
                 ))}
+                <ThemedText type="caption" themeColor="textTertiary" style={{ marginLeft: 2 }}>
+                  {stageLabel(c.box)}
+                  {isDue(c, now) ? ' · due' : ''}
+                </ThemedText>
               </View>
               <ThemedText type="h3" style={{ marginTop: 8 }}>
                 {c.front}
@@ -304,12 +302,11 @@ const styles = StyleSheet.create({
     alignSelf: 'center',
   },
   statsRow: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between' },
-  boxStrip: { flexDirection: 'row', alignItems: 'flex-end', gap: Spacing.two, marginTop: Spacing.three },
-  boxCol: { alignItems: 'center', gap: 3, width: 26 },
-  boxBar: { width: 16, borderRadius: 3 },
+  stageWrap: { marginTop: Spacing.three, gap: Spacing.one },
+  stageBar: { flexDirection: 'row', height: 8, borderRadius: 4, overflow: 'hidden' },
   cards: { marginTop: Spacing.four, gap: Spacing.two },
   card: { padding: Spacing.four, borderRadius: Radius.md, borderWidth: StyleSheet.hairlineWidth },
-  boxDots: { flexDirection: 'row', gap: 4 },
+  boxDots: { flexDirection: 'row', alignItems: 'center', gap: 4 },
   modeRow: { flexDirection: 'row', alignItems: 'center', gap: Spacing.two, paddingVertical: Spacing.three, borderBottomWidth: StyleSheet.hairlineWidth },
   dot: { width: 14, height: 5, borderRadius: Radius.pill },
 });

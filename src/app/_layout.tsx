@@ -5,6 +5,7 @@ import { Linking } from 'react-native';
 import { SafeAreaProvider } from 'react-native-safe-area-context';
 
 import { CelebrationWatcher } from '@/components/celebration-watcher';
+import { ErrorBoundary } from '@/components/error-boundary';
 import { ReminderSync } from '@/components/reminder-sync';
 import { SyncManager } from '@/components/sync-manager';
 import { CelebrationProvider } from '@/components/ui/celebrate';
@@ -33,8 +34,9 @@ export default function RootLayout() {
   }, []);
 
   return (
-    <SafeAreaProvider>
-      <StoreProvider>
+    <ErrorBoundary>
+      <SafeAreaProvider>
+        <StoreProvider>
         <CelebrationProvider>
           <ToastProvider>
             <CelebrationWatcher />
@@ -43,8 +45,9 @@ export default function RootLayout() {
             <ThemedChrome />
           </ToastProvider>
         </CelebrationProvider>
-      </StoreProvider>
-    </SafeAreaProvider>
+        </StoreProvider>
+      </SafeAreaProvider>
+    </ErrorBoundary>
   );
 }
 
