@@ -101,6 +101,8 @@ export default function PlansScreen() {
                     <View style={{ marginTop: 6, flexDirection: 'row' }}>
                       {s.finished ? (
                         <Pill tone="success" label="Complete" />
+                      ) : s.behind > 2 ? (
+                        <Pill tone="ember" label="Pick back up" />
                       ) : s.behind > 0 ? (
                         <Pill tone="ember" label={`${s.behind} day${s.behind > 1 ? 's' : ''} behind`} />
                       ) : (

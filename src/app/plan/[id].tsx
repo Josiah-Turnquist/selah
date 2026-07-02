@@ -15,7 +15,7 @@ import { useToast } from '@/components/ui/toast';
 import { Sheet } from '@/components/ui/sheet';
 import { MaxContentWidth, Radius, Spacing } from '@/constants/theme';
 import { formatReadingList } from '@/lib/bible/refs';
-import { planStats } from '@/lib/plans/progress';
+import { finishLabel, planStats } from '@/lib/plans/progress';
 import { templateById } from '@/lib/plans/templates';
 import { shareLink } from '@/lib/share';
 import { useActions, useData } from '@/lib/store/store';
@@ -62,9 +62,16 @@ export default function PlanDetail() {
           <ThemedText type="small" themeColor="textSecondary">
             {s.completedCount} of {plan.durationDays} days complete
           </ThemedText>
+          {!s.finished ? (
+            <ThemedText type="caption" themeColor="textTertiary">
+              Finishes about {finishLabel(s)}
+            </ThemedText>
+          ) : null}
           <View style={{ flexDirection: 'row' }}>
             {s.finished ? (
               <Pill tone="success" label="Complete 🎉" />
+            ) : s.behind > 2 ? (
+              <Pill tone="ember" label="Pick back up" />
             ) : s.behind > 0 ? (
               <Pill tone="ember" label={`${s.behind} day${s.behind > 1 ? 's' : ''} behind`} />
             ) : (
@@ -79,6 +86,26 @@ export default function PlanDetail() {
           />
         </View>
       </View>
+
+      {s.behind > 2 ? (
+        <View style={[styles.catchUp, { backgroundColor: theme.emberSoft }]}>
+          <View style={{ flex: 1 }}>
+            <ThemedText type="small">Life happened — that’s okay.</ThemedText>
+            <ThemedText type="caption" themeColor="textSecondary">
+              Make today your next reading day. Everything you’ve completed stays.
+            </ThemedText>
+          </View>
+          <Button
+            size="sm"
+            variant="secondary"
+            title="Catch me up"
+            onPress={() => {
+              actions.catchUpPlan(plan.id);
+              toast('Schedule reset — today is your next reading day');
+            }}
+          />
+        </View>
+      ) : null}
 
       {friendsHere.length > 0 ? (
         <View style={styles.friendsStrip}>
@@ -232,6 +259,14 @@ const styles = StyleSheet.create({
     alignSelf: 'center',
   },
   summary: { flexDirection: 'row', alignItems: 'center', gap: Spacing.four, paddingVertical: Spacing.three },
+  catchUp: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: Spacing.three,
+    padding: Spacing.three,
+    borderRadius: Radius.md,
+    marginBottom: Spacing.two,
+  },
   friendsStrip: { flexDirection: 'row', flexWrap: 'wrap', gap: Spacing.two, marginTop: Spacing.one },
   friendChip: { flexDirection: 'row', alignItems: 'center', gap: 6 },
   daysHeading: { marginTop: Spacing.four, marginBottom: Spacing.one },
