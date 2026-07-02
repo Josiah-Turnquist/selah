@@ -10,7 +10,8 @@ import { Button, IconButton, Pill } from '@/components/ui/primitives';
 import { ConfirmButton } from '@/components/ui/confirm-button';
 import { Sheet } from '@/components/ui/sheet';
 import { MaxContentWidth, Radius, Spacing } from '@/constants/theme';
-import { dueCount } from '@/lib/store/srs';
+import { Segmented } from '@/components/ui/segmented';
+import { dueCount, isDue } from '@/lib/store/srs';
 import { useActions, useData } from '@/lib/store/store';
 import { useTheme } from '@/hooks/use-theme';
 
@@ -27,6 +28,7 @@ export default function DeckDetail() {
   const [manage, setManage] = useState(false);
   const [renameVal, setRenameVal] = useState('');
   const [studyOpen, setStudyOpen] = useState(false);
+  const [scope, setScope] = useState<'new' | 'review' | 'all'>('review');
 
   const deck = data.decks.find((d) => d.id === id);
   if (!deck) {
@@ -38,6 +40,11 @@ export default function DeckDetail() {
     );
   }
   const due = dueCount(deck.cards);
+  const now = Date.now();
+  const newCount = deck.cards.filter((c) => c.reviews === 0).length;
+  const reviewCount = deck.cards.filter((c) => isDue(c, now) && c.reviews > 0).length;
+  const boxCounts = [1, 2, 3, 4, 5].map((b) => deck.cards.filter((c) => c.box === b).length);
+  const boxMax = Math.max(1, ...boxCounts);
 
   const submitCard = () => {
     if (!front.trim() || !back.trim()) return;
@@ -77,11 +84,40 @@ export default function DeckDetail() {
         </View>
 
         {deck.cards.length > 0 ? (
+          <View style={styles.boxStrip}>
+            {boxCounts.map((n, i) => (
+              <View key={i} style={styles.boxCol}>
+                <ThemedText type="caption" themeColor={n > 0 ? 'textSecondary' : 'textTertiary'}>
+                  {n}
+                </ThemedText>
+                <View
+                  style={[
+                    styles.boxBar,
+                    { height: 4 + Math.round((n / boxMax) * 22), backgroundColor: n > 0 ? theme.accent : theme.backgroundSelected },
+                  ]}
+                />
+                <ThemedText type="caption" themeColor="textTertiary">
+                  {i + 1}
+                </ThemedText>
+              </View>
+            ))}
+            <View style={{ flex: 1 }}>
+              <ThemedText type="caption" themeColor="textTertiary" style={{ textAlign: 'right' }}>
+                cards per box{'\n'}5 = learned
+              </ThemedText>
+            </View>
+          </View>
+        ) : null}
+
+        {deck.cards.length > 0 ? (
           <Button
             icon={Play}
             title={due > 0 ? `Study ${due} due` : 'Review all'}
             style={{ marginTop: Spacing.three }}
-            onPress={() => setStudyOpen(true)}
+            onPress={() => {
+              setScope(reviewCount > 0 ? 'review' : newCount > 0 ? 'new' : 'all');
+              setStudyOpen(true);
+            }}
           />
         ) : null}
 
@@ -190,13 +226,22 @@ export default function DeckDetail() {
         />
       </Sheet>
 
-      <Sheet visible={studyOpen} onClose={() => setStudyOpen(false)} title="Choose a mode">
+      <Sheet visible={studyOpen} onClose={() => setStudyOpen(false)} title="Study">
+        <Segmented
+          options={[
+            { label: `New · ${newCount}`, value: 'new' },
+            { label: `Review · ${reviewCount}`, value: 'review' },
+            { label: `All · ${deck.cards.length}`, value: 'all' },
+          ]}
+          value={scope}
+          onChange={(s) => setScope(s)}
+        />
         <ModeRow
           title="Flashcards"
           subtitle="Flip cards and self-grade"
           onPress={() => {
             setStudyOpen(false);
-            router.push(`/deck/${deck.id}/study?mode=flashcards`);
+            router.push(`/deck/${deck.id}/study?mode=flashcards&scope=${scope}`);
           }}
         />
         <ModeRow
@@ -204,7 +249,7 @@ export default function DeckDetail() {
           subtitle="Pick the right answer"
           onPress={() => {
             setStudyOpen(false);
-            router.push(`/deck/${deck.id}/study?mode=choice`);
+            router.push(`/deck/${deck.id}/study?mode=choice&scope=${scope}`);
           }}
         />
         <ModeRow
@@ -212,7 +257,7 @@ export default function DeckDetail() {
           subtitle={deck.kind === 'verse' ? 'Type the verse from memory' : 'Type the answer'}
           onPress={() => {
             setStudyOpen(false);
-            router.push(`/deck/${deck.id}/study?mode=type`);
+            router.push(`/deck/${deck.id}/study?mode=type&scope=${scope}`);
           }}
         />
       </Sheet>
@@ -259,6 +304,9 @@ const styles = StyleSheet.create({
     alignSelf: 'center',
   },
   statsRow: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between' },
+  boxStrip: { flexDirection: 'row', alignItems: 'flex-end', gap: Spacing.two, marginTop: Spacing.three },
+  boxCol: { alignItems: 'center', gap: 3, width: 26 },
+  boxBar: { width: 16, borderRadius: 3 },
   cards: { marginTop: Spacing.four, gap: Spacing.two },
   card: { padding: Spacing.four, borderRadius: Radius.md, borderWidth: StyleSheet.hairlineWidth },
   boxDots: { flexDirection: 'row', gap: 4 },
