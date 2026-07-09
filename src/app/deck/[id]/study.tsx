@@ -18,6 +18,12 @@ import { tapLight, tapSuccess } from '@/lib/util/haptics';
 
 type Mode = 'flashcards' | 'choice' | 'type';
 
+// How high each mode can promote a card. Recognition is weaker evidence than
+// recall — a right pick from four options can be a lucky guess — so multiple
+// choice tops out at Familiar (box 3); reaching Strong and Known takes a
+// recall mode (flip or type).
+const MODE_MAX_BOX: Record<Mode, number> = { flashcards: 5, choice: 3, type: 5 };
+
 function shuffle<T>(arr: T[]): T[] {
   const a = arr.slice();
   for (let i = a.length - 1; i > 0; i--) {
@@ -154,7 +160,7 @@ export default function StudySession() {
 
   const card = cards[index];
   const grade = (g: Grade) => {
-    actions.reviewCard(deck.id, card.id, g);
+    actions.reviewCard(deck.id, card.id, g, MODE_MAX_BOX[mode]);
     advance(g !== 'again');
   };
 
@@ -191,7 +197,7 @@ export default function StudySession() {
           onPick={(opt) => {
             setPicked(opt);
             const right = opt === card.back;
-            actions.reviewCard(deck.id, card.id, right ? 'good' : 'again');
+            actions.reviewCard(deck.id, card.id, right ? 'good' : 'again', MODE_MAX_BOX[mode]);
             if (right) tapSuccess();
             else tapLight();
           }}
@@ -207,7 +213,7 @@ export default function StudySession() {
           onType={setTyped}
           onCheck={() => setChecked(true)}
           onResult={(right) => {
-            actions.reviewCard(deck.id, card.id, right ? 'good' : 'again');
+            actions.reviewCard(deck.id, card.id, right ? 'good' : 'again', MODE_MAX_BOX[mode]);
             advance(right);
           }}
           theme={theme}

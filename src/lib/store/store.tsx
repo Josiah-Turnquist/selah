@@ -124,7 +124,7 @@ export type Actions = {
   addCard: (deckId: string, front: string, back: string, ref?: CardRef) => void;
   updateCard: (deckId: string, cardId: string, patch: { front?: string; back?: string }) => void;
   deleteCard: (deckId: string, cardId: string) => void;
-  reviewCard: (deckId: string, cardId: string, grade: Grade) => void;
+  reviewCard: (deckId: string, cardId: string, grade: Grade, maxBox?: number) => void;
   // sync (friends + backups)
   setAccount: (account: Account | null) => void;
   setFriends: (friends: Friend[]) => void;
@@ -458,12 +458,12 @@ export function StoreProvider({ children }: { children: ReactNode }) {
             d.id === deckId ? { ...d, cards: d.cards.filter((c) => c.id !== cardId) } : d,
           ),
         })),
-      reviewCard: (deckId, cardId, grade) =>
+      reviewCard: (deckId, cardId, grade, maxBox) =>
         update((p) => ({
           ...p,
           decks: p.decks.map((d) =>
             d.id === deckId
-              ? { ...d, cards: d.cards.map((c) => (c.id === cardId ? applyGrade(c, grade) : c)) }
+              ? { ...d, cards: d.cards.map((c) => (c.id === cardId ? applyGrade(c, grade, Date.now(), maxBox) : c)) }
               : d,
           ),
         })),

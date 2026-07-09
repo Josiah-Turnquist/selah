@@ -12,13 +12,19 @@ export function intervalDaysForBox(box: number): number {
   return BOX_INTERVAL_DAYS[Math.max(1, Math.min(5, box))];
 }
 
-export function applyGrade(card: Card, grade: Grade, now: number = Date.now()): Card {
+export function applyGrade(card: Card, grade: Grade, now: number = Date.now(), maxBox: number = 5): Card {
   // Legacy/imported cards can lack a numeric box; treat them as box 1 rather
   // than letting NaN poison the schedule.
   let box = Number.isFinite(card.box) ? card.box : 1;
   if (grade === 'again') box = 1;
-  else if (grade === 'good') box = Math.min(5, box + 1);
-  else box = Math.min(5, box + 2);
+  else {
+    // `maxBox` caps how far this review can *promote* the card: recognition
+    // modes (multiple choice) pass a ceiling below Known since a right pick
+    // can be a lucky guess. A card already above the cap keeps its stage —
+    // the cap never demotes, and a miss still resets to box 1 above.
+    const ceiling = Math.min(5, Math.max(maxBox, box));
+    box = Math.min(ceiling, box + (grade === 'good' ? 1 : 2));
+  }
   return {
     ...card,
     box,
