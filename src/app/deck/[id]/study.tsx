@@ -1,5 +1,5 @@
 import { router, useLocalSearchParams } from 'expo-router';
-import { Check, ChevronLeft, RotateCcw, X } from 'lucide-react-native';
+import { BookOpen, Check, ChevronLeft, RotateCcw, X } from 'lucide-react-native';
 import { useEffect, useMemo, useState } from 'react';
 import { Pressable, ScrollView, StyleSheet, View } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
@@ -10,19 +10,30 @@ import { TextField } from '@/components/ui/field';
 import { Button, IconButton } from '@/components/ui/primitives';
 import { ProgressBar } from '@/components/ui/progress';
 import { MaxContentWidth, Radius, Spacing } from '@/constants/theme';
-import { isDue, type Grade } from '@/lib/store/srs';
+import { isDue, stageLabel, type Grade } from '@/lib/store/srs';
+import {
+  blankFor,
+  buildSlipAllowance,
+  buildTokens,
+  chipMatches,
+  clozeKind,
+  pickHiddenIndices,
+  splitPunct,
+  words,
+} from '@/lib/study/cloze';
 import type { Card } from '@/lib/store/types';
 import { useActions, useData } from '@/lib/store/store';
 import { useTheme } from '@/hooks/use-theme';
 import { tapLight, tapSuccess } from '@/lib/util/haptics';
 
-type Mode = 'flashcards' | 'choice' | 'type';
+type Mode = 'flashcards' | 'choice' | 'type' | 'recall' | 'build';
 
 // How high each mode can promote a card. Recognition is weaker evidence than
-// recall — a right pick from four options can be a lucky guess — so multiple
-// choice tops out at Familiar (box 3); reaching Strong and Known takes a
-// recall mode (flip or type).
-const MODE_MAX_BOX: Record<Mode, number> = { flashcards: 5, choice: 3, type: 5 };
+// recall — a right pick from four options can be a lucky guess, and building
+// from a word bank still shows you every word — so multiple choice tops out
+// at Familiar (box 3) and build-it at Strong (box 4); flip, type, and fading
+// recall can take a card all the way to Known.
+const MODE_MAX_BOX: Record<Mode, number> = { flashcards: 5, choice: 3, type: 5, recall: 5, build: 4 };
 
 function shuffle<T>(arr: T[]): T[] {
   const a = arr.slice();
@@ -56,13 +67,20 @@ type Scope = 'new' | 'review' | 'all' | 'due';
 
 export default function StudySession() {
   const params = useLocalSearchParams<{ id: string; mode?: string; scope?: string }>();
-  const mode: Mode = params.mode === 'choice' ? 'choice' : params.mode === 'type' ? 'type' : 'flashcards';
   const scope: Scope =
     params.scope === 'new' || params.scope === 'review' || params.scope === 'all' ? params.scope : 'due';
   const data = useData();
   const actions = useActions();
   const theme = useTheme();
   const deck = data.decks.find((d) => d.id === params.id);
+  const requested = params.mode;
+  let mode: Mode =
+    requested === 'choice' || requested === 'type' || requested === 'recall' || requested === 'build'
+      ? requested
+      : 'flashcards';
+  // The cloze modes only make sense for scripture; a stale link on a fact
+  // deck falls back to flashcards.
+  if ((mode === 'recall' || mode === 'build') && deck?.kind !== 'verse') mode = 'flashcards';
 
   const order = useMemo(() => {
     if (!deck) return [] as string[];
@@ -204,6 +222,26 @@ export default function StudySession() {
           onNext={() => advance(picked === card.back)}
           theme={theme}
         />
+      ) : mode === 'recall' ? (
+        <FadingRecall
+          key={card.id}
+          card={card}
+          onResult={(right) => {
+            actions.reviewCard(deck.id, card.id, right ? 'good' : 'again', MODE_MAX_BOX[mode]);
+            advance(right);
+          }}
+          theme={theme}
+        />
+      ) : mode === 'build' ? (
+        <BuildIt
+          key={card.id}
+          card={card}
+          onNext={(right) => {
+            actions.reviewCard(deck.id, card.id, right ? 'good' : 'again', MODE_MAX_BOX[mode]);
+            advance(right);
+          }}
+          theme={theme}
+        />
       ) : (
         <TypeIt
           card={card}
@@ -330,6 +368,205 @@ function Choice({
   );
 }
 
+/**
+ * Fading recall: the verse is shown with blanks that grow with the card's
+ * stage — a few gaps while Learning, first letters only at Strong, nothing
+ * but the reference at Known. Tap a blank to peek at that word; self-grade
+ * after revealing. Keyed by card id so peek state resets per card.
+ */
+function FadingRecall({
+  card,
+  onResult,
+  theme,
+}: {
+  card: Card;
+  onResult: (right: boolean) => void;
+  theme: ThemeT;
+}) {
+  const box = card.box;
+  const tokens = useMemo(() => words(card.back), [card.back]);
+  const hidden = useMemo(() => pickHiddenIndices(tokens, box), [tokens, box]);
+  const kind = clozeKind(box);
+  const [peeked, setPeeked] = useState<Set<number>>(() => new Set());
+  const [shown, setShown] = useState(false);
+
+  const peek = (i: number) => {
+    setPeeked((prev) => new Set(prev).add(i));
+    tapLight();
+  };
+
+  return (
+    <ScrollView contentContainerStyle={styles.quizBody} showsVerticalScrollIndicator={false}>
+      <ThemedText type="label" themeColor="textTertiary">
+        {stageLabel(box)} ·{' '}
+        {kind === 'memory' ? 'from memory' : kind === 'first-letter' ? 'first letters' : 'fill the gaps'}
+      </ThemedText>
+      <ThemedText type="h2" style={{ marginTop: Spacing.two, marginBottom: Spacing.four }}>
+        {card.front}
+      </ThemedText>
+
+      {kind === 'memory' && !shown ? (
+        <ThemedText type="body" themeColor="textTertiary">
+          Say it from memory, then check yourself.
+        </ThemedText>
+      ) : (
+        <>
+          <ThemedText type="bodySerif" style={styles.clozeText}>
+            {tokens.map((t, i) => {
+              const { lead, core, trail } = splitPunct(t);
+              const isBlank = !shown && core !== '' && hidden.has(i) && !peeked.has(i);
+              return (
+                <ThemedText key={i} type="bodySerif" style={styles.clozeText}>
+                  {lead}
+                  {isBlank ? (
+                    <ThemedText
+                      type="bodySerif"
+                      suppressHighlighting
+                      onPress={() => peek(i)}
+                      style={[styles.clozeText, { color: theme.accent }]}>
+                      {blankFor(core, kind)}
+                    </ThemedText>
+                  ) : (
+                    core
+                  )}
+                  {trail}
+                  {i < tokens.length - 1 ? ' ' : ''}
+                </ThemedText>
+              );
+            })}
+          </ThemedText>
+          {!shown ? (
+            <ThemedText type="caption" themeColor="textTertiary" style={{ marginTop: Spacing.two }}>
+              Tap a blank to peek.
+            </ThemedText>
+          ) : null}
+        </>
+      )}
+
+      {shown && card.ref ? (
+        <Button
+          variant="ghost"
+          icon={BookOpen}
+          title="Read it in context"
+          style={{ marginTop: Spacing.two, alignSelf: 'flex-start' }}
+          onPress={() =>
+            router.push(`/reader/${card.ref!.bookId}/${card.ref!.chapter}?v=${card.ref!.verse}`)
+          }
+        />
+      ) : null}
+
+      <View style={{ marginTop: Spacing.four }}>
+        {!shown ? (
+          <Button title="Show verse" full onPress={() => setShown(true)} />
+        ) : (
+          <View style={styles.row}>
+            <Button variant="secondary" title="Missed it" style={{ flex: 1 }} onPress={() => onResult(false)} />
+            <Button title="Got it" style={{ flex: 1 }} onPress={() => onResult(true)} />
+          </View>
+        )}
+      </View>
+    </ScrollView>
+  );
+}
+
+/**
+ * Build it: the verse's words are shuffled into chips and tapped back into
+ * order. Any chip matching the next word is accepted (duplicates are
+ * interchangeable); wrong taps count as slips. Keyed by card id.
+ */
+function BuildIt({
+  card,
+  onNext,
+  theme,
+}: {
+  card: Card;
+  onNext: (right: boolean) => void;
+  theme: ThemeT;
+}) {
+  const tokens = useMemo(() => buildTokens(card.back), [card.back]);
+  const [chipOrder] = useState(() => shuffle(tokens.map((_, i) => i)));
+  const [used, setUsed] = useState<Set<number>>(() => new Set());
+  const [progress, setProgress] = useState(0);
+  const [slips, setSlips] = useState(0);
+  const [wrongChip, setWrongChip] = useState<number | null>(null);
+  const done = tokens.length === 0 || progress >= tokens.length;
+
+  useEffect(() => {
+    if (done) tapSuccess();
+  }, [done]);
+
+  const tap = (chipIdx: number) => {
+    if (done || used.has(chipIdx)) return;
+    if (chipMatches(tokens[progress], tokens[chipIdx])) {
+      setUsed((prev) => new Set(prev).add(chipIdx));
+      setProgress((p) => p + 1);
+      tapLight();
+    } else {
+      setSlips((s) => s + 1);
+      setWrongChip(chipIdx);
+      setTimeout(() => setWrongChip(null), 350);
+    }
+  };
+
+  return (
+    <ScrollView contentContainerStyle={styles.quizBody} showsVerticalScrollIndicator={false}>
+      <ThemedText type="label" themeColor="textTertiary">
+        Tap the words in order
+      </ThemedText>
+      <ThemedText type="h2" style={{ marginTop: Spacing.two, marginBottom: Spacing.three }}>
+        {card.front}
+      </ThemedText>
+
+      <View style={[styles.built, { backgroundColor: theme.backgroundElement }]}>
+        {progress > 0 ? (
+          <ThemedText type="bodySerif">{tokens.slice(0, progress).join(' ')}</ThemedText>
+        ) : (
+          <ThemedText type="body" themeColor="textTertiary">
+            Build the verse from the words below…
+          </ThemedText>
+        )}
+      </View>
+
+      {!done ? (
+        <View style={styles.chips}>
+          {chipOrder.map((idx) => {
+            const consumed = used.has(idx);
+            return (
+              <Pressable
+                key={idx}
+                disabled={consumed}
+                onPress={() => tap(idx)}
+                style={({ pressed }) => [
+                  styles.chip,
+                  {
+                    backgroundColor: theme.card,
+                    borderColor: wrongChip === idx ? theme.danger : theme.border,
+                  },
+                  consumed && { opacity: 0.25 },
+                  pressed && { opacity: 0.7 },
+                ]}>
+                <ThemedText type="body">{tokens[idx]}</ThemedText>
+              </Pressable>
+            );
+          })}
+        </View>
+      ) : (
+        <>
+          <ThemedText type="small" themeColor="textSecondary" style={{ marginTop: Spacing.two }}>
+            {slips === 0 ? 'Flawless — every word in order.' : `Rebuilt with ${slips} slip${slips === 1 ? '' : 's'}.`}
+          </ThemedText>
+          <Button
+            title="Next"
+            full
+            style={{ marginTop: Spacing.three }}
+            onPress={() => onNext(slips <= buildSlipAllowance(tokens.length))}
+          />
+        </>
+      )}
+    </ScrollView>
+  );
+}
+
 function TypeIt({
   card,
   kind,
@@ -424,6 +661,16 @@ const styles = StyleSheet.create({
     borderWidth: 1,
   },
   reveal: { padding: Spacing.four, borderRadius: Radius.md },
+  // Roomier line height so tappable blanks are comfortable touch targets.
+  clozeText: { lineHeight: 34 },
+  built: { padding: Spacing.four, borderRadius: Radius.md, minHeight: 84 },
+  chips: { flexDirection: 'row', flexWrap: 'wrap', gap: Spacing.two, marginTop: Spacing.three },
+  chip: {
+    paddingHorizontal: Spacing.three,
+    paddingVertical: Spacing.two,
+    borderRadius: Radius.pill,
+    borderWidth: 1,
+  },
   controls: { padding: Spacing.four, width: '100%', maxWidth: MaxContentWidth, alignSelf: 'center' },
   row: { flexDirection: 'row', gap: Spacing.two },
 });
