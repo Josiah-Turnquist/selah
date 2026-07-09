@@ -234,6 +234,26 @@ export default function DeckDetail() {
           value={scope}
           onChange={(s) => setScope(s)}
         />
+        {deck.kind === 'verse' ? (
+          <>
+            <ModeRow
+              title="Fading recall"
+              subtitle="The verse fades as your stage climbs"
+              onPress={() => {
+                setStudyOpen(false);
+                router.push(`/deck/${deck.id}/study?mode=recall&scope=${scope}`);
+              }}
+            />
+            <ModeRow
+              title="Build it"
+              subtitle="Rebuild it word by word · tops out at Strong"
+              onPress={() => {
+                setStudyOpen(false);
+                router.push(`/deck/${deck.id}/study?mode=build&scope=${scope}`);
+              }}
+            />
+          </>
+        ) : null}
         <ModeRow
           title="Flashcards"
           subtitle="Flip cards and self-grade"
