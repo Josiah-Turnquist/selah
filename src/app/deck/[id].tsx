@@ -244,7 +244,7 @@ export default function DeckDetail() {
         />
         <ModeRow
           title="Multiple choice"
-          subtitle="Pick the right answer"
+          subtitle="Pick the right answer · tops out at Familiar"
           onPress={() => {
             setStudyOpen(false);
             router.push(`/deck/${deck.id}/study?mode=choice&scope=${scope}`);
