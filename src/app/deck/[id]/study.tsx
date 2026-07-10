@@ -12,11 +12,11 @@ import { ProgressBar } from '@/components/ui/progress';
 import { MaxContentWidth, Radius, Spacing } from '@/constants/theme';
 import { isDue, stageLabel, type Grade } from '@/lib/store/srs';
 import {
-  blankFor,
   buildSlipAllowance,
   buildTokens,
   chipMatches,
   clozeKind,
+  normalizeWord,
   pickHiddenIndices,
   splitPunct,
   words,
@@ -419,12 +419,27 @@ function FadingRecall({
                 <ThemedText key={i} type="bodySerif" style={styles.clozeText}>
                   {lead}
                   {isBlank ? (
-                    <ThemedText
-                      type="bodySerif"
-                      suppressHighlighting
-                      onPress={() => peek(i)}
-                      style={[styles.clozeText, { color: theme.accent }]}>
-                      {blankFor(core, kind)}
+                    // The hidden word is rendered transparent inside an inline
+                    // view, so the slot keeps the word's exact width and
+                    // revealing never reflows the line. The view's bottom
+                    // border is the blank — a continuous rule sitting on the
+                    // baseline (a real text underline would gap around the
+                    // invisible descenders).
+                    <ThemedText type="bodySerif" style={styles.clozeText}>
+                      {kind === 'first-letter' ? (
+                        <ThemedText type="bodySerif" style={[styles.clozeText, { color: theme.accent }]}>
+                          {core[0]}
+                        </ThemedText>
+                      ) : null}
+                      <View style={[styles.blankSlot, { borderBottomColor: theme.accent }]}>
+                        <ThemedText
+                          type="bodySerif"
+                          suppressHighlighting
+                          onPress={() => peek(i)}
+                          style={styles.blankGhost}>
+                          {kind === 'first-letter' ? core.slice(1) : core}
+                        </ThemedText>
+                      </View>
                     </ThemedText>
                   ) : (
                     core
@@ -484,7 +499,18 @@ function BuildIt({
   theme: ThemeT;
 }) {
   const tokens = useMemo(() => buildTokens(card.back), [card.back]);
-  const [chipOrder] = useState(() => shuffle(tokens.map((_, i) => i)));
+  // Chips sort by length (ties alphabetical) instead of shuffling: duplicate
+  // words sit side by side and the board reads calmly, while sentence order
+  // is still thoroughly scrambled.
+  const [chipOrder] = useState(() =>
+    tokens
+      .map((_, i) => i)
+      .sort((a, b) => {
+        const wa = normalizeWord(tokens[a]);
+        const wb = normalizeWord(tokens[b]);
+        return wa.length - wb.length || wa.localeCompare(wb);
+      }),
+  );
   const [used, setUsed] = useState<Set<number>>(() => new Set());
   const [progress, setProgress] = useState(0);
   const [slips, setSlips] = useState(0);
@@ -663,6 +689,12 @@ const styles = StyleSheet.create({
   reveal: { padding: Spacing.four, borderRadius: Radius.md },
   // Roomier line height so tappable blanks are comfortable touch targets.
   clozeText: { lineHeight: 34 },
+  // The slot is an inline view whose bottom border is the blank's rule. iOS
+  // rests an inline view's bottom on the text's descender line, so lift it
+  // back up to the baseline; the tight ghost line box keeps the view from
+  // inflating the line height.
+  blankSlot: { borderBottomWidth: 2, transform: [{ translateY: -5 }] },
+  blankGhost: { color: 'transparent', lineHeight: 20 },
   built: { padding: Spacing.four, borderRadius: Radius.md, minHeight: 84 },
   chips: { flexDirection: 'row', flexWrap: 'wrap', gap: Spacing.two, marginTop: Spacing.three },
   chip: {
