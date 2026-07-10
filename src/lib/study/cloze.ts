@@ -71,15 +71,6 @@ export function pickHiddenIndices(
 }
 
 /**
- * Placeholder for a hidden word, sized to it (clamped so long words don't
- * blow out the line). First-letter kind keeps the opening letter as a hint.
- */
-export function blankFor(core: string, kind: ClozeKind): string {
-  const n = Math.max(2, Math.min(7, core.length - (kind === 'first-letter' ? 1 : 0)));
-  return (kind === 'first-letter' ? core[0] : '') + '_'.repeat(n);
-}
-
-/**
  * Tokens that take part in the build game. Pure-punctuation tokens (a lone
  * em-dash, say) are dropped so every chip is actually guessable.
  */
