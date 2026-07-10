@@ -431,15 +431,14 @@ function FadingRecall({
                           {core[0]}
                         </ThemedText>
                       ) : null}
-                      <View style={[styles.blankSlot, { borderBottomColor: theme.accent }]}>
-                        <ThemedText
-                          type="bodySerif"
-                          suppressHighlighting
-                          onPress={() => peek(i)}
-                          style={styles.blankGhost}>
+                      <Pressable
+                        onPress={() => peek(i)}
+                        hitSlop={{ top: 6, bottom: 14, left: 5, right: 5 }}
+                        style={[styles.blankSlot, { borderBottomColor: theme.accent }]}>
+                        <ThemedText type="bodySerif" style={styles.blankGhost}>
                           {kind === 'first-letter' ? core.slice(1) : core}
                         </ThemedText>
-                      </View>
+                      </Pressable>
                     </ThemedText>
                   ) : (
                     core
@@ -693,7 +692,10 @@ const styles = StyleSheet.create({
   // rests an inline view's bottom on the text's descender line, so lift it
   // back up to the baseline; the tight ghost line box keeps the view from
   // inflating the line height.
-  blankSlot: { borderBottomWidth: 2, transform: [{ translateY: -5 }] },
+  // paddingTop grows the real touch box upward (the rule stays put at the
+  // box bottom); hitSlop extends it further, most generously below the rule
+  // where taps tend to land. Width stays exactly the word's — never pad it.
+  blankSlot: { borderBottomWidth: 2, transform: [{ translateY: -5 }], paddingTop: 4 },
   blankGhost: { color: 'transparent', lineHeight: 20 },
   built: { padding: Spacing.four, borderRadius: Radius.md, minHeight: 84 },
   chips: { flexDirection: 'row', flexWrap: 'wrap', gap: Spacing.two, marginTop: Spacing.three },
