@@ -23,6 +23,7 @@ import type { PlanTemplate } from '@/lib/plans/templates';
 import { presetToDeck, type PresetDeck } from '@/lib/store/preset-decks';
 import { defaultData } from '@/lib/store/seed';
 import { applyGrade, type Grade } from '@/lib/store/srs';
+import { syncWidgets } from '@/lib/widgets/bridge';
 import {
   DATA_VERSION,
   type Account,
@@ -167,6 +168,7 @@ export function StoreProvider({ children }: { children: ReactNode }) {
     saveTimer.current = setTimeout(() => {
       saveTimer.current = null;
       AsyncStorage.setItem(STORAGE_KEY, JSON.stringify(data)).catch(() => {});
+      syncWidgets(data);
     }, 250);
     return () => {
       if (saveTimer.current) clearTimeout(saveTimer.current);
@@ -182,7 +184,10 @@ export function StoreProvider({ children }: { children: ReactNode }) {
       clearTimeout(saveTimer.current);
       saveTimer.current = null;
       const d = dataRef.current;
-      if (d) AsyncStorage.setItem(STORAGE_KEY, JSON.stringify(d)).catch(() => {});
+      if (d) {
+        AsyncStorage.setItem(STORAGE_KEY, JSON.stringify(d)).catch(() => {});
+        syncWidgets(d);
+      }
     });
     return () => sub.remove();
   }, []);

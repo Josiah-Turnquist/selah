@@ -1,0 +1,168 @@
+/**
+ * Home-screen widget data. The app precomputes everything the widgets show —
+ * a rotation of prayer prompts and the current memory verse in its
+ * fading-recall state — and hands it to the widget extension through the
+ * shared App Group. The Swift side only renders; the logic lives here where
+ * it ships over OTA.
+ *
+ * This shape is a frozen contract with the Swift TimelineProviders — bump
+ * `v` and keep the old fields on any breaking change, since older installed
+ * builds keep reading whatever the current JS writes.
+ */
+
+import { isDue, stageLabel } from '@/lib/store/srs';
+import type { AppData, Card } from '@/lib/store/types';
+import { clozeKind, pickHiddenIndices, splitPunct, words } from '@/lib/study/cloze';
+import { localDayKey } from '@/lib/util/date';
+
+export type PrayerSlot = { at: number; listId: string; listTitle: string; text: string };
+
+export type WidgetSnapshot = {
+  v: 1;
+  updatedAt: number;
+  prayer: { empty: boolean; slots: PrayerSlot[] };
+  memory: {
+    empty: boolean;
+    deckId: string | null;
+    ref: string | null;
+    cloze: string | null;
+    stage: string | null;
+    dueCount: number;
+  };
+};
+
+/** Slots every 2 hours covering ~2 days, so the widget keeps rotating even
+ *  if the app isn't opened tomorrow. */
+const SLOT_MS = 2 * 3_600_000;
+const SLOT_COUNT = 24;
+
+function hashString(s: string): number {
+  let h = 0;
+  for (let i = 0; i < s.length; i++) h = ((h << 5) - h + s.charCodeAt(i)) | 0;
+  return h >>> 0;
+}
+
+/** Deterministic PRNG: widget content stays put within a day (the snapshot
+ *  rewrites on every edit) and rotates fresh the next. */
+function mulberry32(seed: number): () => number {
+  let a = seed;
+  return () => {
+    a |= 0;
+    a = (a + 0x6d2b79f5) | 0;
+    let t = Math.imul(a ^ (a >>> 15), 1 | a);
+    t = (t + Math.imul(t ^ (t >>> 7), 61 | t)) ^ t;
+    return ((t ^ (t >>> 14)) >>> 0) / 4294967296;
+  };
+}
+
+function buildPrayerSlots(data: AppData, now: number): PrayerSlot[] {
+  const items: { listId: string; listTitle: string; text: string; id: string }[] = [];
+  for (const list of data.prayerLists) {
+    for (const item of list.items) {
+      if (!item.answered) items.push({ listId: list.id, listTitle: list.title, text: item.text, id: item.id });
+    }
+  }
+  if (items.length === 0) return [];
+
+  const rand = mulberry32(hashString(localDayKey(new Date(now))));
+  for (let i = items.length - 1; i > 0; i--) {
+    const j = Math.floor(rand() * (i + 1));
+    [items[i], items[j]] = [items[j], items[i]];
+  }
+
+  const start = new Date(now);
+  start.setMinutes(0, 0, 0);
+  const slots: PrayerSlot[] = [];
+  for (let i = 0; i < SLOT_COUNT; i++) {
+    const it = items[i % items.length];
+    slots.push({ at: start.getTime() + i * SLOT_MS, listId: it.listId, listTitle: it.listTitle, text: it.text });
+  }
+  return slots;
+}
+
+function cardBox(card: Card): number {
+  return Number.isFinite(card.box) ? card.box : 1;
+}
+
+/** The verse most worth a glance: a due card first (lowest stage, then
+ *  soonest due), otherwise the least-known card still climbing. */
+function pickMemoryCard(data: AppData, now: number): { deckId: string; card: Card } | null {
+  let best: { deckId: string; card: Card } | null = null;
+  for (const deck of data.decks) {
+    if (deck.kind !== 'verse') continue;
+    for (const card of deck.cards) {
+      if (!card.back?.trim()) continue;
+      if (!best) {
+        best = { deckId: deck.id, card };
+        continue;
+      }
+      const a = card;
+      const b = best.card;
+      const dueA = isDue(a, now);
+      const dueB = isDue(b, now);
+      const win =
+        dueA !== dueB
+          ? dueA
+          : cardBox(a) !== cardBox(b)
+            ? cardBox(a) < cardBox(b)
+            : a.due < b.due;
+      if (win) best = { deckId: deck.id, card };
+    }
+  }
+  return best;
+}
+
+/**
+ * The verse as the widget shows it: blanks matching the card's stage,
+ * rendered as plain text. Seeded per (card, stage, day) so the pattern is
+ * stable all day. Known cards return '' — the widget shows only the
+ * reference.
+ */
+export function widgetCloze(back: string, box: number, seedKey: string): string {
+  const kind = clozeKind(box);
+  if (kind === 'memory') return '';
+  const tokens = words(back);
+  const hidden = pickHiddenIndices(tokens, box, mulberry32(hashString(seedKey)));
+  return tokens
+    .map((t, i) => {
+      const { lead, core, trail } = splitPunct(t);
+      if (!hidden.has(i) || !core) return t;
+      const blank =
+        kind === 'first-letter'
+          ? core[0] + '_'.repeat(Math.max(2, Math.min(4, core.length - 1)))
+          : '_'.repeat(Math.max(2, Math.min(6, core.length)));
+      return lead + blank + trail;
+    })
+    .join(' ');
+}
+
+export function buildWidgetSnapshot(data: AppData, now: number = Date.now()): WidgetSnapshot {
+  const slots = buildPrayerSlots(data, now);
+
+  const pick = pickMemoryCard(data, now);
+  let dueCount = 0;
+  for (const deck of data.decks) {
+    if (deck.kind !== 'verse') continue;
+    for (const card of deck.cards) if (isDue(card, now)) dueCount++;
+  }
+
+  return {
+    v: 1,
+    updatedAt: now,
+    prayer: { empty: slots.length === 0, slots },
+    memory: pick
+      ? {
+          empty: false,
+          deckId: pick.deckId,
+          ref: pick.card.front,
+          cloze: widgetCloze(
+            pick.card.back,
+            cardBox(pick.card),
+            `${pick.card.id}:${cardBox(pick.card)}:${localDayKey(new Date(now))}`,
+          ),
+          stage: stageLabel(cardBox(pick.card)),
+          dueCount,
+        }
+      : { empty: true, deckId: null, ref: null, cloze: null, stage: null, dueCount: 0 },
+  };
+}
