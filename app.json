@@ -16,6 +16,9 @@
       "icon": "./assets/images/icon.png",
       "infoPlist": {
         "ITSAppUsesNonExemptEncryption": false
+      },
+      "entitlements": {
+        "com.apple.security.application-groups": ["group.com.josiahturnq.selah"]
       }
     },
     "android": {
@@ -41,7 +44,13 @@
         }
       ],
       "expo-sharing",
-      "./plugins/remove-push-entitlement"
+      "./plugins/remove-push-entitlement",
+      [
+        "@bacons/apple-targets",
+        {
+          "appleTeamId": "75QAYJX7AZ"
+        }
+      ]
     ],
     "experiments": {
       "typedRoutes": false,
