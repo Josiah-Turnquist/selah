@@ -16,6 +16,9 @@
       "icon": "./assets/images/icon.png",
       "infoPlist": {
         "ITSAppUsesNonExemptEncryption": false
+      },
+      "entitlements": {
+        "com.apple.security.application-groups": ["group.com.josiahturnq.selah"]
       }
     },
     "android": {
@@ -41,7 +44,13 @@
         }
       ],
       "expo-sharing",
-      "./plugins/remove-push-entitlement"
+      "./plugins/remove-push-entitlement",
+      [
+        "@bacons/apple-targets",
+        {
+          "appleTeamId": "75QAYJX7AZ"
+        }
+      ]
     ],
     "experiments": {
       "typedRoutes": false,
@@ -49,7 +58,22 @@
     },
     "extra": {
       "eas": {
-        "projectId": "79315a5b-eda2-42e4-9f2b-5c041781d7db"
+        "projectId": "79315a5b-eda2-42e4-9f2b-5c041781d7db",
+        "build": {
+          "experimental": {
+            "ios": {
+              "appExtensions": [
+                {
+                  "targetName": "Selah Widgets",
+                  "bundleIdentifier": "com.josiahturnq.selah.widgets",
+                  "entitlements": {
+                    "com.apple.security.application-groups": ["group.com.josiahturnq.selah"]
+                  }
+                }
+              ]
+            }
+          }
+        }
       }
     },
     "runtimeVersion": {
