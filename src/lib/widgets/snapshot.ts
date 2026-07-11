@@ -10,12 +10,24 @@
  * builds keep reading whatever the current JS writes.
  */
 
+import { isPrayedThisCycle } from '@/lib/cycle';
 import { isDue, stageLabel } from '@/lib/store/srs';
 import type { AppData, Card } from '@/lib/store/types';
 import { clozeKind, pickHiddenIndices, splitPunct, words } from '@/lib/study/cloze';
 import { localDayKey } from '@/lib/util/date';
 
-export type PrayerSlot = { at: number; listId: string; listTitle: string; text: string };
+export type PrayerSlotItem = { id: string; text: string; prayed: boolean };
+
+export type PrayerSlot = {
+  at: number;
+  listId: string;
+  listTitle: string;
+  /** First item's text — kept so the single-request widget from build 15
+   *  keeps rendering after the app updates the snapshot over OTA. */
+  text: string;
+  /** The list's window: up to 4 items, not-yet-prayed-this-cycle first. */
+  items: PrayerSlotItem[];
+};
 
 export type WidgetSnapshot = {
   v: 1;
@@ -55,27 +67,54 @@ function mulberry32(seed: number): () => number {
   };
 }
 
+/** Items per slot — matches what the medium widget can comfortably list. */
+const WINDOW = 4;
+
 function buildPrayerSlots(data: AppData, now: number): PrayerSlot[] {
-  const items: { listId: string; listTitle: string; text: string; id: string }[] = [];
-  for (const list of data.prayerLists) {
-    for (const item of list.items) {
-      if (!item.answered) items.push({ listId: list.id, listTitle: list.title, text: item.text, id: item.id });
-    }
-  }
-  if (items.length === 0) return [];
+  // One slot = one list's window: its title plus up to WINDOW items, the
+  // ones not yet prayed this cycle first. Lists rotate through the day in
+  // day-seeded order; a single long list rotates its own window instead so
+  // there's still variety.
+  const lists = data.prayerLists
+    .map((list) => {
+      const ranked = list.items
+        .filter((it) => !it.answered)
+        .map((it) => ({ it, prayed: isPrayedThisCycle(it.prayed, list.cycle, new Date(now)) }))
+        .sort((a, b) =>
+          a.prayed !== b.prayed ? (a.prayed ? 1 : -1) : a.it.createdAt - b.it.createdAt,
+        );
+      return { id: list.id, title: list.title, ranked };
+    })
+    .filter((l) => l.ranked.length > 0);
+  if (lists.length === 0) return [];
 
   const rand = mulberry32(hashString(localDayKey(new Date(now))));
-  for (let i = items.length - 1; i > 0; i--) {
+  for (let i = lists.length - 1; i > 0; i--) {
     const j = Math.floor(rand() * (i + 1));
-    [items[i], items[j]] = [items[j], items[i]];
+    [lists[i], lists[j]] = [lists[j], lists[i]];
   }
 
   const start = new Date(now);
   start.setMinutes(0, 0, 0);
   const slots: PrayerSlot[] = [];
   for (let i = 0; i < SLOT_COUNT; i++) {
-    const it = items[i % items.length];
-    slots.push({ at: start.getTime() + i * SLOT_MS, listId: it.listId, listTitle: it.listTitle, text: it.text });
+    const list = lists[i % lists.length];
+    const round = Math.floor(i / lists.length);
+    const offset = list.ranked.length > WINDOW ? (round * WINDOW) % list.ranked.length : 0;
+    const items: PrayerSlotItem[] = Array.from(
+      { length: Math.min(WINDOW, list.ranked.length) },
+      (_, k) => {
+        const r = list.ranked[(offset + k) % list.ranked.length];
+        return { id: r.it.id, text: r.it.text, prayed: r.prayed };
+      },
+    );
+    slots.push({
+      at: start.getTime() + i * SLOT_MS,
+      listId: list.id,
+      listTitle: list.title,
+      text: items[0].text,
+      items,
+    });
   }
   return slots;
 }

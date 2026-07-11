@@ -23,7 +23,7 @@ import type { PlanTemplate } from '@/lib/plans/templates';
 import { presetToDeck, type PresetDeck } from '@/lib/store/preset-decks';
 import { defaultData } from '@/lib/store/seed';
 import { applyGrade, type Grade } from '@/lib/store/srs';
-import { syncWidgets } from '@/lib/widgets/bridge';
+import { consumeWidgetActions, syncWidgets } from '@/lib/widgets/bridge';
 import {
   DATA_VERSION,
   type Account,
@@ -114,6 +114,10 @@ export type Actions = {
   updatePrayerItem: (listId: string, itemId: string, patch: { text?: string; note?: string }) => void;
   deletePrayerItem: (listId: string, itemId: string) => void;
   togglePrayed: (listId: string, itemId: string) => void;
+  /** Idempotent apply of check-offs made on the home-screen widget: adds the
+   *  day to `prayed` if absent, never removes (a toggle could un-pray an
+   *  item the user also marked in-app). */
+  applyWidgetPrayed: (entries: { listId: string; itemId: string; dayKey: string }[]) => void;
   setPrayerAnswered: (listId: string, itemId: string, answered: boolean) => void;
   setListReminder: (listId: string, hour: number | null) => void;
   importPrayerList: (list: PrayerList, fromName?: string) => string;
@@ -377,6 +381,22 @@ export function StoreProvider({ children }: { children: ReactNode }) {
           }),
         }));
       },
+      applyWidgetPrayed: (entries) =>
+        update((p) => ({
+          ...p,
+          prayerLists: p.prayerLists.map((l) => {
+            const forList = entries.filter((e) => e.listId === l.id);
+            if (forList.length === 0) return l;
+            return {
+              ...l,
+              items: l.items.map((it) => {
+                const hit = forList.find((e) => e.itemId === it.id);
+                if (!hit || it.prayed.includes(hit.dayKey)) return it;
+                return { ...it, prayed: [...it.prayed, hit.dayKey].slice(-90) };
+              }),
+            };
+          }),
+        })),
       setPrayerAnswered: (listId, itemId, answered) =>
         update((p) => ({
           ...p,
@@ -486,6 +506,23 @@ export function StoreProvider({ children }: { children: ReactNode }) {
     // which is acceptable for this one-off guard.
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
+
+  // Check-offs made on the home-screen widget while the app was closed sit
+  // in an App Group inbox — fold them into the store once hydrated, and
+  // again every time the app returns to the foreground.
+  const hydrated = data !== null;
+  useEffect(() => {
+    if (!hydrated) return;
+    const reconcile = () => {
+      const entries = consumeWidgetActions();
+      if (entries.length > 0) actions.applyWidgetPrayed(entries);
+    };
+    reconcile();
+    const sub = AppState.addEventListener('change', (state) => {
+      if (state === 'active') reconcile();
+    });
+    return () => sub.remove();
+  }, [hydrated, actions]);
 
   if (!data) {
     const palette = Colors[scheme === 'dark' ? 'dark' : 'light'];
