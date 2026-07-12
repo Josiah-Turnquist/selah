@@ -119,7 +119,57 @@ struct PrayerEntry: TimelineEntry {
   let items: [Item]
 }
 
-struct PrayerProvider: TimelineProvider {
+// MARK: - Per-widget list choice
+// The picker's options come from the snapshot in the App Group, so editing
+// the widget works without the app running. "All lists" keeps the rotation.
+
+struct PrayerListEntity: AppEntity {
+  static var typeDisplayRepresentation: TypeDisplayRepresentation = "Prayer List"
+  static var defaultQuery = PrayerListQuery()
+
+  var id: String
+  var title: String
+
+  var displayRepresentation: DisplayRepresentation { .init(title: "\(title)") }
+
+  static let all = PrayerListEntity(id: "", title: "All lists")
+}
+
+struct PrayerListQuery: EntityQuery {
+  func entities(for identifiers: [String]) async throws -> [PrayerListEntity] {
+    allOptions().filter { identifiers.contains($0.id) }
+  }
+
+  func suggestedEntities() async throws -> [PrayerListEntity] {
+    allOptions()
+  }
+
+  func defaultResult() async -> PrayerListEntity? {
+    .all
+  }
+
+  private func allOptions() -> [PrayerListEntity] {
+    var out: [PrayerListEntity] = [.all]
+    guard let snap = readSnapshot() else { return out }
+    var seen = Set<String>()
+    for slot in snap.prayer.slots where !seen.contains(slot.listId) {
+      seen.insert(slot.listId)
+      out.append(PrayerListEntity(id: slot.listId, title: slot.listTitle))
+    }
+    return out
+  }
+}
+
+struct PrayerConfigIntent: WidgetConfigurationIntent {
+  static var title: LocalizedStringResource = "A moment to pray"
+  static var description = IntentDescription("Choose which prayer list this widget shows.")
+
+  @Parameter(title: "List") var list: PrayerListEntity?
+}
+
+struct PrayerProvider: AppIntentTimelineProvider {
+  typealias Item = PrayerEntry.Item
+
   func placeholder(in _: Context) -> PrayerEntry {
     PrayerEntry(
       date: .now,
@@ -129,22 +179,20 @@ struct PrayerProvider: TimelineProvider {
     )
   }
 
-  typealias Item = PrayerEntry.Item
-
-  func getSnapshot(in _: Context, completion: @escaping (PrayerEntry) -> Void) {
-    completion(currentEntry())
+  func snapshot(for configuration: PrayerConfigIntent, in _: Context) async -> PrayerEntry {
+    currentEntry(for: configuration)
   }
 
-  func getTimeline(in _: Context, completion: @escaping (Timeline<PrayerEntry>) -> Void) {
+  func timeline(for configuration: PrayerConfigIntent, in _: Context) async -> Timeline<PrayerEntry> {
     let now = Date()
-    guard let snap = readSnapshot(), !snap.prayer.empty, !snap.prayer.slots.isEmpty else {
+    let slots = chosenSlots(for: configuration)
+    guard !slots.isEmpty else {
       let empty = PrayerEntry(date: now, listId: nil, listTitle: nil, items: [])
-      completion(Timeline(entries: [empty], policy: .after(now.addingTimeInterval(4 * 3600))))
-      return
+      return Timeline(entries: [empty], policy: .after(now.addingTimeInterval(4 * 3600)))
     }
 
     let pending = Set(readPendingActions().map(\.itemId))
-    let all = snap.prayer.slots.map { entry(for: $0, at: Date(timeIntervalSince1970: $0.at / 1000), pending: pending) }
+    let all = slots.map { entry(for: $0, at: Date(timeIntervalSince1970: $0.at / 1000), pending: pending) }
     let current = all.last(where: { $0.date <= now })
     let future = all.filter { $0.date > now }
 
@@ -158,10 +206,19 @@ struct PrayerProvider: TimelineProvider {
     // keep showing the last prompt and check back periodically instead of
     // re-requesting in a tight loop via .atEnd.
     if future.isEmpty {
-      completion(Timeline(entries: entries, policy: .after(now.addingTimeInterval(4 * 3600))))
-    } else {
-      completion(Timeline(entries: entries, policy: .atEnd))
+      return Timeline(entries: entries, policy: .after(now.addingTimeInterval(4 * 3600)))
     }
+    return Timeline(entries: entries, policy: .atEnd)
+  }
+
+  /** The snapshot's slots, narrowed to the configured list. Falls back to
+      the full rotation if the chosen list no longer has slots. */
+  private func chosenSlots(for configuration: PrayerConfigIntent) -> [Snapshot.PrayerSlot] {
+    guard let snap = readSnapshot(), !snap.prayer.empty else { return [] }
+    let chosen = configuration.list?.id ?? ""
+    if chosen.isEmpty { return snap.prayer.slots }
+    let filtered = snap.prayer.slots.filter { $0.listId == chosen }
+    return filtered.isEmpty ? snap.prayer.slots : filtered
   }
 
   private func entry(for slot: Snapshot.PrayerSlot, at date: Date, pending: Set<String>) -> PrayerEntry {
@@ -172,11 +229,10 @@ struct PrayerProvider: TimelineProvider {
     return PrayerEntry(date: date, listId: slot.listId, listTitle: slot.listTitle, items: items)
   }
 
-  private func currentEntry() -> PrayerEntry {
+  private func currentEntry(for configuration: PrayerConfigIntent) -> PrayerEntry {
     let now = Date()
-    guard let snap = readSnapshot(), !snap.prayer.empty,
-          let slot = snap.prayer.slots.last(where: { Date(timeIntervalSince1970: $0.at / 1000) <= now })
-            ?? snap.prayer.slots.first
+    let slots = chosenSlots(for: configuration)
+    guard let slot = slots.last(where: { Date(timeIntervalSince1970: $0.at / 1000) <= now }) ?? slots.first
     else {
       return PrayerEntry(date: now, listId: nil, listTitle: nil, items: [])
     }
@@ -215,22 +271,24 @@ struct PrayerWidgetView: View {
       } else {
         Spacer(minLength: 0)
         ForEach(entry.items.prefix(rowLimit), id: \.id) { item in
-          HStack(alignment: .firstTextBaseline, spacing: 7) {
+          HStack(alignment: .center, spacing: 7) {
             if item.id.isEmpty {
               Circle()
                 .strokeBorder(Color.primary.opacity(0.35), lineWidth: 1.5)
                 .frame(width: 15, height: 15)
             } else {
               Button(intent: MarkPrayedIntent(itemId: item.id, listId: entry.listId ?? "")) {
-                Image(systemName: item.prayed ? "circle.fill" : "circle")
+                // Prayed reads as rest, not a spotlight: a faint check, and
+                // the words recede with it.
+                Image(systemName: item.prayed ? "checkmark.circle.fill" : "circle")
                   .font(.system(size: 15, weight: .light))
-                  .foregroundStyle(item.prayed ? Color.primary : Color.primary.opacity(0.4))
+                  .foregroundStyle(item.prayed ? Color.primary.opacity(0.3) : Color.primary.opacity(0.45))
               }
               .buttonStyle(.plain)
             }
             Text(item.text)
               .font(.system(family == .systemMedium ? .subheadline : .footnote, design: .serif))
-              .foregroundStyle(item.prayed ? .secondary : .primary)
+              .foregroundStyle(item.prayed ? .tertiary : .primary)
               .lineLimit(1)
               .minimumScaleFactor(0.9)
           }
@@ -246,11 +304,11 @@ struct PrayerWidgetView: View {
 
 struct PrayerWidget: Widget {
   var body: some WidgetConfiguration {
-    StaticConfiguration(kind: "PrayerWidget", provider: PrayerProvider()) { entry in
+    AppIntentConfiguration(kind: "PrayerWidget", intent: PrayerConfigIntent.self, provider: PrayerProvider()) { entry in
       PrayerWidgetView(entry: entry)
     }
     .configurationDisplayName("A moment to pray")
-    .description("Rotates gently through your prayer requests.")
+    .description("Your prayer requests — pick a list, or rotate through them all.")
     .supportedFamilies([.systemSmall, .systemMedium])
   }
 }
