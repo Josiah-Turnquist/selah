@@ -23,9 +23,17 @@ struct Snapshot: Decodable {
     let text: String
     let items: [PrayerItem]?
   }
+  struct PrayerList: Decodable {
+    let id: String
+    let title: String
+    let items: [PrayerItem]
+  }
   struct Prayer: Decodable {
     let empty: Bool
     let slots: [PrayerSlot]
+    /** Every list in full (absent in snapshots written before build 18);
+     *  `slots` only carries a 4-item window. */
+    let lists: [PrayerList]?
   }
   struct Memory: Decodable {
     let empty: Bool
@@ -78,6 +86,52 @@ func localDayKey(_ date: Date = Date()) -> String {
   return String(format: "%04d-%02d-%02d", c.year ?? 0, c.month ?? 0, c.day ?? 0)
 }
 
+// MARK: - Paging
+// Widgets can't scroll, so the header's page control walks through a long
+// list a screenful at a time. The chosen page lives in the App Group next
+// to the inbox and resets whenever the widget moves to another list.
+
+private let pageKey = "widgetPage"
+
+struct PageState: Codable {
+  let listId: String
+  let page: Int
+}
+
+func readPage(forList listId: String) -> Int {
+  guard
+    let defaults = UserDefaults(suiteName: appGroup),
+    let raw = defaults.string(forKey: pageKey),
+    let data = raw.data(using: .utf8),
+    let state = try? JSONDecoder().decode(PageState.self, from: data),
+    state.listId == listId
+  else { return 0 }
+  return max(0, state.page)
+}
+
+struct ShowPageIntent: AppIntent {
+  static var title: LocalizedStringResource = "Show more prayers"
+  static var isDiscoverable = false
+
+  @Parameter(title: "List") var listId: String
+  @Parameter(title: "Page") var page: Int
+
+  init() {}
+  init(listId: String, page: Int) {
+    self.listId = listId
+    self.page = page
+  }
+
+  func perform() async throws -> some IntentResult {
+    if let data = try? JSONEncoder().encode(PageState(listId: listId, page: page)),
+       let raw = String(data: data, encoding: .utf8) {
+      UserDefaults(suiteName: appGroup)?.set(raw, forKey: pageKey)
+    }
+    WidgetCenter.shared.reloadTimelines(ofKind: "PrayerWidget")
+    return .result()
+  }
+}
+
 struct MarkPrayedIntent: AppIntent {
   static var title: LocalizedStringResource = "Mark prayed"
   static var isDiscoverable = false
@@ -116,7 +170,12 @@ struct PrayerEntry: TimelineEntry {
   let date: Date
   let listId: String?
   let listTitle: String?
+  /** Just this page's items — the provider has already filtered and sliced. */
   let items: [Item]
+  let page: Int
+  let totalPages: Int
+  /** The list had items, but "Hide prayed" filtered them all out. */
+  let allPrayed: Bool
 }
 
 // MARK: - Per-widget list choice
@@ -151,6 +210,10 @@ struct PrayerListQuery: EntityQuery {
   private func allOptions() -> [PrayerListEntity] {
     var out: [PrayerListEntity] = [.all]
     guard let snap = readSnapshot() else { return out }
+    if let lists = snap.prayer.lists {
+      out.append(contentsOf: lists.map { PrayerListEntity(id: $0.id, title: $0.title) })
+      return out
+    }
     var seen = Set<String>()
     for slot in snap.prayer.slots where !seen.contains(slot.listId) {
       seen.insert(slot.listId)
@@ -162,9 +225,19 @@ struct PrayerListQuery: EntityQuery {
 
 struct PrayerConfigIntent: WidgetConfigurationIntent {
   static var title: LocalizedStringResource = "A moment to pray"
-  static var description = IntentDescription("Choose which prayer list this widget shows.")
+  static var description = IntentDescription("Choose a prayer list, or rotate through them all.")
 
   @Parameter(title: "List") var list: PrayerListEntity?
+  @Parameter(title: "Hide prayed", default: false) var hidePrayed: Bool
+}
+
+/** Rows each family fits — also the page size, since a page is one screenful. */
+func rowLimit(for family: WidgetFamily) -> Int {
+  switch family {
+  case .systemLarge: return 8
+  case .systemMedium: return 4
+  default: return 2
+  }
 }
 
 struct PrayerProvider: AppIntentTimelineProvider {
@@ -175,31 +248,43 @@ struct PrayerProvider: AppIntentTimelineProvider {
       date: .now,
       listId: nil,
       listTitle: "Family",
-      items: [Item(id: "", text: "A moment to pray", prayed: false)]
+      items: [Item(id: "", text: "A moment to pray", prayed: false)],
+      page: 0,
+      totalPages: 1,
+      allPrayed: false
     )
   }
 
-  func snapshot(for configuration: PrayerConfigIntent, in _: Context) async -> PrayerEntry {
-    currentEntry(for: configuration)
+  func snapshot(for configuration: PrayerConfigIntent, in context: Context) async -> PrayerEntry {
+    let now = Date()
+    let slots = chosenSlots(for: configuration)
+    guard let slot = slots.last(where: { Date(timeIntervalSince1970: $0.at / 1000) <= now }) ?? slots.first
+    else { return Self.emptyEntry(at: now) }
+    return entry(for: slot, at: now, pending: pendingIds(), config: configuration, family: context.family)
   }
 
-  func timeline(for configuration: PrayerConfigIntent, in _: Context) async -> Timeline<PrayerEntry> {
+  func timeline(for configuration: PrayerConfigIntent, in context: Context) async -> Timeline<PrayerEntry> {
     let now = Date()
     let slots = chosenSlots(for: configuration)
     guard !slots.isEmpty else {
-      let empty = PrayerEntry(date: now, listId: nil, listTitle: nil, items: [])
-      return Timeline(entries: [empty], policy: .after(now.addingTimeInterval(4 * 3600)))
+      return Timeline(entries: [Self.emptyEntry(at: now)], policy: .after(now.addingTimeInterval(4 * 3600)))
     }
 
-    let pending = Set(readPendingActions().map(\.itemId))
-    let all = slots.map { entry(for: $0, at: Date(timeIntervalSince1970: $0.at / 1000), pending: pending) }
+    let pending = pendingIds()
+    let all = slots.map {
+      entry(
+        for: $0,
+        at: Date(timeIntervalSince1970: $0.at / 1000),
+        pending: pending,
+        config: configuration,
+        family: context.family
+      )
+    }
     let current = all.last(where: { $0.date <= now })
     let future = all.filter { $0.date > now }
 
     var entries: [PrayerEntry] = []
-    if let current {
-      entries.append(PrayerEntry(date: now, listId: current.listId, listTitle: current.listTitle, items: current.items))
-    }
+    if let current { entries.append(current.dated(now)) }
     entries.append(contentsOf: future)
 
     // A stale snapshot (app not opened in days) has no future slots left —
@@ -209,6 +294,14 @@ struct PrayerProvider: AppIntentTimelineProvider {
       return Timeline(entries: entries, policy: .after(now.addingTimeInterval(4 * 3600)))
     }
     return Timeline(entries: entries, policy: .atEnd)
+  }
+
+  private static func emptyEntry(at date: Date) -> PrayerEntry {
+    PrayerEntry(date: date, listId: nil, listTitle: nil, items: [], page: 0, totalPages: 1, allPrayed: false)
+  }
+
+  private func pendingIds() -> Set<String> {
+    Set(readPendingActions().map(\.itemId))
   }
 
   /** The snapshot's slots, narrowed to the configured list. Falls back to
@@ -221,22 +314,59 @@ struct PrayerProvider: AppIntentTimelineProvider {
     return filtered.isEmpty ? snap.prayer.slots : filtered
   }
 
-  private func entry(for slot: Snapshot.PrayerSlot, at date: Date, pending: Set<String>) -> PrayerEntry {
-    // Older snapshots (written before the app updated) carry only `text`.
-    let items = (slot.items ?? [Snapshot.PrayerItem(id: "", text: slot.text, prayed: false)]).map {
-      Item(id: $0.id, text: $0.text, prayed: $0.prayed || pending.contains($0.id))
+  /** Every item of the slot's list. `lists` has the full set; a snapshot
+      written before build 18 only has the slot's window, and one written
+      before build 16 only a single line of text. */
+  private func allItems(for slot: Snapshot.PrayerSlot) -> [Snapshot.PrayerItem] {
+    if let list = readSnapshot()?.prayer.lists?.first(where: { $0.id == slot.listId }) {
+      return list.items
     }
-    return PrayerEntry(date: date, listId: slot.listId, listTitle: slot.listTitle, items: items)
+    return slot.items ?? [Snapshot.PrayerItem(id: "", text: slot.text, prayed: false)]
   }
 
-  private func currentEntry(for configuration: PrayerConfigIntent) -> PrayerEntry {
-    let now = Date()
-    let slots = chosenSlots(for: configuration)
-    guard let slot = slots.last(where: { Date(timeIntervalSince1970: $0.at / 1000) <= now }) ?? slots.first
-    else {
-      return PrayerEntry(date: now, listId: nil, listTitle: nil, items: [])
+  private func entry(
+    for slot: Snapshot.PrayerSlot,
+    at date: Date,
+    pending: Set<String>,
+    config: PrayerConfigIntent,
+    family: WidgetFamily
+  ) -> PrayerEntry {
+    // A tap marks the item pending until the app folds the inbox in, so the
+    // widget shows it checked (or hides it) right away.
+    var items = allItems(for: slot).map {
+      Item(id: $0.id, text: $0.text, prayed: $0.prayed || pending.contains($0.id))
     }
-    return entry(for: slot, at: now, pending: Set(readPendingActions().map(\.itemId)))
+    let hadItems = !items.isEmpty
+    if config.hidePrayed { items = items.filter { !$0.prayed } }
+
+    let size = rowLimit(for: family)
+    let totalPages = max(1, Int(ceil(Double(items.count) / Double(size))))
+    let page = min(readPage(forList: slot.listId), totalPages - 1)
+    let visible = Array(items.dropFirst(page * size).prefix(size))
+
+    return PrayerEntry(
+      date: date,
+      listId: slot.listId,
+      listTitle: slot.listTitle,
+      items: visible,
+      page: page,
+      totalPages: totalPages,
+      allPrayed: hadItems && items.isEmpty
+    )
+  }
+}
+
+private extension PrayerEntry {
+  func dated(_ date: Date) -> PrayerEntry {
+    PrayerEntry(
+      date: date,
+      listId: listId,
+      listTitle: listTitle,
+      items: items,
+      page: page,
+      totalPages: totalPages,
+      allPrayed: allPrayed
+    )
   }
 }
 
@@ -244,25 +374,19 @@ struct PrayerWidgetView: View {
   var entry: PrayerEntry
   @Environment(\.widgetFamily) private var family
 
-  private var rowLimit: Int { family == .systemMedium ? 3 : 2 }
+  private var isRoomy: Bool { family != .systemSmall }
 
   var body: some View {
-    VStack(alignment: .leading, spacing: family == .systemMedium ? 6 : 4) {
-      HStack(alignment: .firstTextBaseline) {
-        Text((entry.listTitle ?? "Pray").uppercased())
-          .font(.system(size: 10, weight: .semibold))
-          .kerning(0.9)
-          .foregroundStyle(.secondary)
-          .lineLimit(1)
-        Spacer(minLength: 4)
-        if entry.items.count > rowLimit {
-          Text("+\(entry.items.count - rowLimit)")
-            .font(.system(size: 10, weight: .semibold))
-            .foregroundStyle(.tertiary)
-        }
-      }
+    VStack(alignment: .leading, spacing: isRoomy ? 7 : 4) {
+      header
 
-      if entry.items.isEmpty {
+      if entry.allPrayed {
+        Spacer(minLength: 2)
+        Text("All prayed through.")
+          .font(.system(.footnote, design: .serif).italic())
+          .foregroundStyle(.secondary)
+        Spacer(minLength: 0)
+      } else if entry.items.isEmpty {
         Spacer(minLength: 2)
         Text("Add someone to pray for")
           .font(.system(.footnote, design: .serif))
@@ -270,28 +394,8 @@ struct PrayerWidgetView: View {
         Spacer(minLength: 0)
       } else {
         Spacer(minLength: 0)
-        ForEach(entry.items.prefix(rowLimit), id: \.id) { item in
-          HStack(alignment: .center, spacing: 7) {
-            if item.id.isEmpty {
-              Circle()
-                .strokeBorder(Color.primary.opacity(0.35), lineWidth: 1.5)
-                .frame(width: 15, height: 15)
-            } else {
-              Button(intent: MarkPrayedIntent(itemId: item.id, listId: entry.listId ?? "")) {
-                // Prayed reads as rest, not a spotlight: a faint check, and
-                // the words recede with it.
-                Image(systemName: item.prayed ? "checkmark.circle.fill" : "circle")
-                  .font(.system(size: 15, weight: .light))
-                  .foregroundStyle(item.prayed ? Color.primary.opacity(0.3) : Color.primary.opacity(0.45))
-              }
-              .buttonStyle(.plain)
-            }
-            Text(item.text)
-              .font(.system(family == .systemMedium ? .subheadline : .footnote, design: .serif))
-              .foregroundStyle(item.prayed ? .tertiary : .primary)
-              .lineLimit(1)
-              .minimumScaleFactor(0.9)
-          }
+        ForEach(entry.items, id: \.id) { item in
+          row(for: item)
         }
         Spacer(minLength: 0)
       }
@@ -299,6 +403,55 @@ struct PrayerWidgetView: View {
     .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .leading)
     .containerBackground(for: .widget) { Color(uiColor: .systemBackground) }
     .widgetURL(URL(string: entry.listId.map { "selah://prayer/\($0)" } ?? "selah://pray"))
+  }
+
+  private var header: some View {
+    HStack(alignment: .firstTextBaseline) {
+      Text((entry.listTitle ?? "Pray").uppercased())
+        .font(.system(size: 10, weight: .semibold))
+        .kerning(0.9)
+        .foregroundStyle(.secondary)
+        .lineLimit(1)
+      Spacer(minLength: 4)
+      // Widgets can't scroll, so a long list pages instead: tap to advance,
+      // wrapping back to the first page at the end.
+      if entry.totalPages > 1, let listId = entry.listId {
+        Button(intent: ShowPageIntent(listId: listId, page: (entry.page + 1) % entry.totalPages)) {
+          HStack(spacing: 2) {
+            Text("\(entry.page + 1)/\(entry.totalPages)")
+              .font(.system(size: 10, weight: .semibold))
+            Image(systemName: "chevron.right")
+              .font(.system(size: 8, weight: .semibold))
+          }
+          .foregroundStyle(.tertiary)
+        }
+        .buttonStyle(.plain)
+      }
+    }
+  }
+
+  private func row(for item: PrayerEntry.Item) -> some View {
+    HStack(alignment: .center, spacing: 7) {
+      if item.id.isEmpty {
+        Circle()
+          .strokeBorder(Color.primary.opacity(0.35), lineWidth: 1.5)
+          .frame(width: 15, height: 15)
+      } else {
+        Button(intent: MarkPrayedIntent(itemId: item.id, listId: entry.listId ?? "")) {
+          // Prayed reads as rest, not a spotlight: a faint check, and the
+          // words recede with it.
+          Image(systemName: item.prayed ? "checkmark.circle.fill" : "circle")
+            .font(.system(size: 15, weight: .light))
+            .foregroundStyle(item.prayed ? Color.primary.opacity(0.3) : Color.primary.opacity(0.45))
+        }
+        .buttonStyle(.plain)
+      }
+      Text(item.text)
+        .font(.system(isRoomy ? .subheadline : .footnote, design: .serif))
+        .foregroundStyle(item.prayed ? .tertiary : .primary)
+        .lineLimit(1)
+        .minimumScaleFactor(0.9)
+    }
   }
 }
 
@@ -309,7 +462,7 @@ struct PrayerWidget: Widget {
     }
     .configurationDisplayName("A moment to pray")
     .description("Your prayer requests — pick a list, or rotate through them all.")
-    .supportedFamilies([.systemSmall, .systemMedium])
+    .supportedFamilies([.systemSmall, .systemMedium, .systemLarge])
   }
 }
 
