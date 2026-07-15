@@ -29,10 +29,15 @@ export type PrayerSlot = {
   items: PrayerSlotItem[];
 };
 
+/** A list in full: every unanswered item, not-prayed-this-cycle first. The
+ *  large widget shows ~8 and pages through the rest, so it needs more than
+ *  a slot's window. */
+export type PrayerListSnapshot = { id: string; title: string; items: PrayerSlotItem[] };
+
 export type WidgetSnapshot = {
   v: 1;
   updatedAt: number;
-  prayer: { empty: boolean; slots: PrayerSlot[] };
+  prayer: { empty: boolean; slots: PrayerSlot[]; lists: PrayerListSnapshot[] };
   memory: {
     empty: boolean;
     deckId: string | null;
@@ -67,27 +72,43 @@ function mulberry32(seed: number): () => number {
   };
 }
 
-/** Items per slot — matches what the medium widget can comfortably list. */
+/** Items per slot — what the small/medium widget can comfortably list. */
 const WINDOW = 4;
+/** Cap on items handed over per list. The large widget lists ~8 and pages
+ *  through the rest; this keeps the shared store small. */
+const LIST_CAP = 24;
 
-function buildPrayerSlots(data: AppData, now: number): PrayerSlot[] {
-  // One slot = one list's window: its title plus up to WINDOW items, the
-  // ones not yet prayed this cycle first. Lists rotate through the day in
-  // day-seeded order; a single long list rotates its own window instead so
-  // there's still variety.
-  const lists = data.prayerLists
-    .map((list) => {
-      const ranked = list.items
+type RankedList = { id: string; title: string; items: PrayerSlotItem[] };
+
+/** Each list's unanswered items, not-prayed-this-cycle first, oldest first
+ *  within each group. Lists with nothing left to show are dropped. */
+function rankLists(data: AppData, now: number): RankedList[] {
+  return data.prayerLists
+    .map((list) => ({
+      id: list.id,
+      title: list.title,
+      items: list.items
         .filter((it) => !it.answered)
-        .map((it) => ({ it, prayed: isPrayedThisCycle(it.prayed, list.cycle, new Date(now)) }))
-        .sort((a, b) =>
-          a.prayed !== b.prayed ? (a.prayed ? 1 : -1) : a.it.createdAt - b.it.createdAt,
-        );
-      return { id: list.id, title: list.title, ranked };
-    })
-    .filter((l) => l.ranked.length > 0);
-  if (lists.length === 0) return [];
+        .map((it) => ({
+          id: it.id,
+          text: it.text,
+          prayed: isPrayedThisCycle(it.prayed, list.cycle, new Date(now)),
+          createdAt: it.createdAt,
+        }))
+        .sort((a, b) => (a.prayed !== b.prayed ? (a.prayed ? 1 : -1) : a.createdAt - b.createdAt))
+        .slice(0, LIST_CAP)
+        .map(({ id, text, prayed }) => ({ id, text, prayed })),
+    }))
+    .filter((l) => l.items.length > 0);
+}
 
+function buildPrayerSlots(ranked: RankedList[], now: number): PrayerSlot[] {
+  // One slot = one list's window: its title plus up to WINDOW items. Lists
+  // rotate through the day in day-seeded order; a single long list rotates
+  // its own window instead so there's still variety. The full list travels
+  // separately in `lists` — this window is what the small/medium widget
+  // shows (and all that builds before 18 can read).
+  const lists = ranked.slice();
   const rand = mulberry32(hashString(localDayKey(new Date(now))));
   for (let i = lists.length - 1; i > 0; i--) {
     const j = Math.floor(rand() * (i + 1));
@@ -100,13 +121,10 @@ function buildPrayerSlots(data: AppData, now: number): PrayerSlot[] {
   for (let i = 0; i < SLOT_COUNT; i++) {
     const list = lists[i % lists.length];
     const round = Math.floor(i / lists.length);
-    const offset = list.ranked.length > WINDOW ? (round * WINDOW) % list.ranked.length : 0;
+    const offset = list.items.length > WINDOW ? (round * WINDOW) % list.items.length : 0;
     const items: PrayerSlotItem[] = Array.from(
-      { length: Math.min(WINDOW, list.ranked.length) },
-      (_, k) => {
-        const r = list.ranked[(offset + k) % list.ranked.length];
-        return { id: r.it.id, text: r.it.text, prayed: r.prayed };
-      },
+      { length: Math.min(WINDOW, list.items.length) },
+      (_, k) => list.items[(offset + k) % list.items.length],
     );
     slots.push({
       at: start.getTime() + i * SLOT_MS,
@@ -176,7 +194,8 @@ export function widgetCloze(back: string, box: number, seedKey: string): string 
 }
 
 export function buildWidgetSnapshot(data: AppData, now: number = Date.now()): WidgetSnapshot {
-  const slots = buildPrayerSlots(data, now);
+  const ranked = rankLists(data, now);
+  const slots = ranked.length > 0 ? buildPrayerSlots(ranked, now) : [];
 
   const pick = pickMemoryCard(data, now);
   let dueCount = 0;
@@ -188,7 +207,7 @@ export function buildWidgetSnapshot(data: AppData, now: number = Date.now()): Wi
   return {
     v: 1,
     updatedAt: now,
-    prayer: { empty: slots.length === 0, slots },
+    prayer: { empty: slots.length === 0, slots, lists: ranked },
     memory: pick
       ? {
           empty: false,
