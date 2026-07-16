@@ -1,9 +1,10 @@
-/** First-launch seed data so every feature is alive on day one. Dates are
- *  computed relative to "now" so the demo always looks current. */
+/** First-launch starter content so the app has shape on day one: example
+ *  prayer lists, starter decks, and a plan beginning today. All progress
+ *  starts at zero — a new user's history must be theirs, not invented. */
 
 import { DEFAULT_PALETTE } from '@/constants/theme';
 import { DEFAULT_TRANSLATION } from '@/lib/bible/translations';
-import { addDays, localDayKey } from '@/lib/util/date';
+import { localDayKey } from '@/lib/util/date';
 import { uid } from '@/lib/util/id';
 
 import { PRESET_DECKS, presetToDeck } from './preset-decks';
@@ -14,17 +15,14 @@ export function defaultData(): AppData {
   const now = Date.now();
   const today = new Date();
 
-  // Seeded plan: Gospels in 30 Days, started 8 days ago, 6 days completed.
-  const planStart = addDays(today, -8);
-  const completedDays: Record<number, string> = {};
-  for (let d = 1; d <= 6; d++) completedDays[d] = localDayKey(addDays(planStart, d - 1));
+  // Starter plan begins today at day one — no pretend progress.
   const plan: PlanProgress = {
     id: uid('plan_'),
     templateId: 'gospels-30',
     title: 'Gospels in 30 Days',
     durationDays: 30,
-    startedAt: localDayKey(planStart),
-    completedDays,
+    startedAt: localDayKey(today),
+    completedDays: {},
   };
 
   const dailyPrayers: PrayerList = {
@@ -33,8 +31,8 @@ export function defaultData(): AppData {
     cycle: 'daily',
     createdAt: now,
     items: [
-      { id: uid('pi_'), text: 'Wisdom for today’s decisions', createdAt: now, prayed: [localDayKey(today)] },
-      { id: uid('pi_'), text: 'Patience and kindness with family', createdAt: now, prayed: [localDayKey(addDays(today, -1)), localDayKey(addDays(today, -2))] },
+      { id: uid('pi_'), text: 'Wisdom for today’s decisions', createdAt: now, prayed: [] },
+      { id: uid('pi_'), text: 'Patience and kindness with family', createdAt: now, prayed: [] },
       { id: uid('pi_'), text: 'Gratitude — name three things', createdAt: now, prayed: [] },
     ],
   };
@@ -45,7 +43,7 @@ export function defaultData(): AppData {
     createdAt: now,
     items: [
       { id: uid('pi_'), text: 'Mom’s health', note: 'Follow-up appointment this month', createdAt: now, prayed: [] },
-      { id: uid('pi_'), text: 'Dani — job search', createdAt: now, prayed: [localDayKey(addDays(today, -3))] },
+      { id: uid('pi_'), text: 'Dani — job search', createdAt: now, prayed: [] },
       { id: uid('pi_'), text: 'Our small group', createdAt: now, prayed: [] },
     ],
   };
@@ -111,7 +109,7 @@ export function defaultData(): AppData {
     prayerLists: [dailyPrayers, peoplePrayers],
     decks: [memoryVerses, apostles],
     friends: [],
-    readDays: Array.from({ length: 5 }, (_, i) => localDayKey(addDays(today, -i))),
+    readDays: [],
     account: null,
   };
 }
