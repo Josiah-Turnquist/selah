@@ -1,0 +1,45 @@
+{
+  "configVersion": 0,
+  "apple": {
+    "info": {
+      "en-US": {
+        "title": "Selah: Bible & Prayer",
+        "subtitle": "Read, plan, pray, memorize",
+        "description": "Selah is a quiet place to read Scripture, follow a plan, pray, and hide verses in your heart.\n\nNo accounts. No ads. No noise. Your reading, prayers, notes, and progress live on your device — the app works fully offline, and everything about it is built to help you slow down.\n\nREAD\n• A clean, beautiful reader with highlights and inline notes\n• Multiple translations, side-by-side comparison, and full-text search\n• Download your translation once and read everywhere — no connection needed\n\nPLANS\n• Reading plans with a visible finish date and grace when you fall behind\n• A gentle \"catch me up\" that resets the pace without erasing history\n• Invite friends with a short code and quietly cheer each other on\n\nPRAY\n• Prayer lists that reset daily or weekly, with streaks and answered prayers\n• Gentle reminders like \"a moment for your list\" — never nagging\n• A home-screen widget that rotates through your requests and lets you mark them prayed right from the widget\n\nMEMORIZE\n• Verses fade as you learn them — blanks grow with your progress until you can say the whole verse from memory\n• Build-it word games, flashcards, and spaced repetition with named stages\n• A widget that keeps your current verse in front of you all day\n\nSelah means pause. That's the whole idea.",
+        "keywords": [
+          "scripture",
+          "memorize",
+          "verses",
+          "devotional",
+          "reading plan",
+          "christian",
+          "offline",
+          "widget",
+          "quiet time",
+          "kjv"
+        ],
+        "releaseNotes": "Selah's first release: read Scripture offline, follow reading plans with friends, keep prayer lists with gentle reminders and home-screen widgets, and memorize verses that fade as you learn them.",
+        "supportUrl": "https://selah-api-production-2b51.up.railway.app/support",
+        "privacyPolicyUrl": "https://selah-api-production-2b51.up.railway.app/privacy"
+      }
+    },
+    "categories": ["REFERENCE", "LIFESTYLE"],
+    "advisory": {
+      "alcoholTobaccoOrDrugUseOrReferences": "NONE",
+      "contests": "NONE",
+      "gamblingSimulated": "NONE",
+      "horrorOrFearThemes": "NONE",
+      "matureOrSuggestiveThemes": "NONE",
+      "medicalOrTreatmentInformation": "NONE",
+      "profanityOrCrudeHumor": "NONE",
+      "sexualContentGraphicAndNudity": "NONE",
+      "sexualContentOrNudity": "NONE",
+      "violenceCartoonOrFantasy": "NONE",
+      "violenceRealistic": "NONE",
+      "violenceRealisticProlongedGraphicOrSadistic": "NONE",
+      "gambling": false,
+      "unrestrictedWebAccess": false,
+      "kidsAgeBand": null
+    }
+  }
+}
