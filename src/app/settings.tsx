@@ -13,6 +13,7 @@ import { TranslationSheet } from '@/components/translation-sheet';
 import {
   apiConfigured,
   createAccount,
+  deleteAccount,
   fetchBackup,
   parseRecoveryCode,
   recoveryCode,
@@ -344,6 +345,9 @@ export default function Settings() {
             title="Reset"
             style={{ flex: 1 }}
             onPress={() => {
+              // Best-effort server wipe (snapshots, backups, friendships) —
+              // the local reset never waits on the network.
+              if (account) deleteAccount(account).catch(() => {});
               actions.resetEverything();
               setConfirm(false);
               router.back();

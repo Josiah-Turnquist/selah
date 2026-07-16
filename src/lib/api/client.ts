@@ -58,6 +58,12 @@ export async function pushProgress(account: Account, snapshot: ProgressSnapshot)
   await req('/v1/progress', { method: 'PUT', account, body: snapshot });
 }
 
+/** Delete the anonymous account server-side (snapshots, backups, and
+ *  friendships cascade with it). */
+export async function deleteAccount(account: Account): Promise<void> {
+  await req('/v1/users/me', { method: 'DELETE', account });
+}
+
 type ServerFriend = Friend & { readStreak?: number };
 
 export async function fetchFriends(account: Account): Promise<Friend[]> {

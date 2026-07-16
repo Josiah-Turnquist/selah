@@ -12,6 +12,7 @@ import { createHash, randomBytes, timingSafeEqual } from 'node:crypto';
 import { Hono } from 'hono';
 
 import { q } from './db.js';
+import { privacyHtml, supportHtml } from './pages.js';
 
 const app = new Hono();
 
@@ -67,6 +68,11 @@ const requireAuth = async (c, next) => {
 };
 
 app.get('/health', (c) => c.json({ ok: true }));
+
+// Store-listing pages (privacy policy + support), served here so the free
+// app needs no extra hosting.
+app.get('/privacy', (c) => c.html(privacyHtml));
+app.get('/support', (c) => c.html(supportHtml));
 
 // --- accounts ---------------------------------------------------------------
 
@@ -165,6 +171,14 @@ app.post('/v1/friends', requireAuth, async (c) => {
   );
   const { rows: friends } = await q(FRIEND_SELECT, [user.id]);
   return c.json({ friends: friends.map(friendShape) });
+});
+
+// Full account deletion: cascades wipe snapshots, backups, and friendships.
+// Powers "Reset everything" in Settings and the privacy policy's promise.
+app.delete('/v1/users/me', requireAuth, async (c) => {
+  const user = c.get('user');
+  await q('delete from users where id = $1', [user.id]);
+  return c.json({ ok: true });
 });
 
 app.delete('/v1/friends/:id', requireAuth, async (c) => {
