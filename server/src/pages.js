@@ -18,10 +18,6 @@ const shell = (title, body) => `<!doctype html>
     line-height: 1.65; font-size: 17px;
     color: #1b1b1d; background: #fdfdfc;
   }
-  @media (prefers-color-scheme: dark) {
-    body { color: #ececea; background: #131315; }
-    a { color: #ececea; }
-  }
   h1 { font-size: 28px; font-weight: 500; letter-spacing: -0.2px; margin: 0 0 4px; }
   h2 { font-size: 19px; font-weight: 500; margin: 36px 0 8px; }
   p, li { margin: 0 0 14px; }
@@ -29,6 +25,12 @@ const shell = (title, body) => `<!doctype html>
   a { color: #1b1b1d; }
   .muted { opacity: 0.55; font-size: 14px; }
   .brand { text-transform: uppercase; letter-spacing: 1.2px; font-size: 12px; opacity: 0.5; margin-bottom: 28px; }
+  /* Dark overrides come last: same specificity as the base rules, so source
+     order is what makes them win. */
+  @media (prefers-color-scheme: dark) {
+    body { color: #ececea; background: #131315; }
+    a { color: #ececea; }
+  }
 </style>
 </head>
 <body>
