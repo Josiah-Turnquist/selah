@@ -108,6 +108,8 @@ export type Deck = {
   kind: DeckKind;
   cards: Card[];
   createdAt: number;
+  /** Last rename or card add/edit/delete (not study reviews). Absent on decks untouched since this field arrived. */
+  updatedAt?: number;
 };
 
 export type AppData = {
