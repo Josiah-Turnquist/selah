@@ -52,6 +52,7 @@ import { useColorScheme } from '@/hooks/use-color-scheme';
 import { useTheme } from '@/hooks/use-theme';
 import { useActions, useData } from '@/lib/store/store';
 import type { Note } from '@/lib/store/types';
+import { hasPassage, type Passage } from '@/lib/study/deck-choices';
 import { tapLight, tapSuccess } from '@/lib/util/haptics';
 
 type Neighbor = { bookId: number; chapter: number } | null;
@@ -249,6 +250,10 @@ export default function ReaderScreen() {
         ? formatRef(bookId, chapter, selected[0])
         : `${book?.name} ${chapter}:${formatVerseRange(selected)}`;
   const selectedText = () => selected.map((v) => verseText(v)).join(' ');
+  const passage: Passage | null =
+    selected.length === 0
+      ? null
+      : { label: selectionLabel, ref: { bookId, chapter, verse: selected[0] }, verses: selected.length };
 
   const chapterNotes = useMemo(() => {
     const map = new Map<number, Note>();
@@ -285,13 +290,17 @@ export default function ReaderScreen() {
     setSelected([]);
     setSheet(null);
   };
-  const addToDeck = (deckId: string) => {
+  const addToDeck = (deckId: string, title: string) => {
     const deck = data.decks.find((d) => d.id === deckId);
-    actions.addCard(deckId, selectionLabel, selectedText(), { bookId, chapter, verse: selected[0] });
-    tapSuccess();
     setSelected([]);
     setSheet(null);
-    toast(`Added to ${deck?.title ?? 'deck'}`);
+    if (deck && passage && hasPassage(deck, passage)) {
+      toast(`Already in ${title}`);
+      return;
+    }
+    actions.addCard(deckId, selectionLabel, selectedText(), { bookId, chapter, verse: selected[0] });
+    tapSuccess();
+    toast(`Added to ${title}`);
   };
   const copy = async () => {
     await Clipboard.setStringAsync(`${selectedText()}\n— ${selectionLabel} (${translation})`);
@@ -745,7 +754,7 @@ export default function ReaderScreen() {
         </View>
       </Sheet>
 
-      <DeckPicker visible={sheet === 'deck'} onClose={() => setSheet(null)} onPicked={addToDeck} />
+      <DeckPicker visible={sheet === 'deck'} passage={passage} onClose={() => setSheet(null)} onPicked={addToDeck} />
 
       <TranslationSheet
         visible={showTranslation}
