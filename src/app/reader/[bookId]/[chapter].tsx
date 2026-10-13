@@ -320,6 +320,13 @@ export default function ReaderScreen() {
     setSheet(null);
   };
 
+  // A press that began just before a sheet started opening still fires on release.
+  // Drop it: presenting a second modal while the first is still settling leaves
+  // iOS with an invisible one that swallows every touch until the app is killed.
+  const whenIdle = (fn: () => void) => () => {
+    if (!sheet) fn();
+  };
+
   const go = (n: Neighbor) => {
     if (!n) return;
     setSelected([]);
@@ -703,7 +710,7 @@ export default function ReaderScreen() {
               {HIGHLIGHT_COLORS.map((c) => (
                 <Pressable
                   key={c}
-                  onPress={() => applyHighlight(c)}
+                  onPress={whenIdle(() => applyHighlight(c))}
                   accessibilityLabel={`Highlight ${c}`}
                   style={({ pressed }) => [
                     styles.swatch,
@@ -714,7 +721,7 @@ export default function ReaderScreen() {
                 />
               ))}
               <Pressable
-                onPress={clearHighlight}
+                onPress={whenIdle(clearHighlight)}
                 accessibilityLabel="Clear highlight"
                 style={[styles.swatch, styles.clearSwatch, { borderColor: theme.border }]}>
                 <X size={18} color={theme.textSecondary} />
@@ -722,11 +729,11 @@ export default function ReaderScreen() {
             </View>
             <View style={styles.actionGrid}>
               {noteVerse != null ? (
-                <ActionBtn icon={StickyNote} label={existingNote ? 'Edit note' : 'Add note'} onPress={openNote} />
+                <ActionBtn icon={StickyNote} label={existingNote ? 'Edit note' : 'Add note'} onPress={whenIdle(openNote)} />
               ) : null}
-              <ActionBtn icon={GraduationCap} label="Add to deck" onPress={() => setSheet('deck')} />
-              <ActionBtn icon={Copy} label="Copy" onPress={copy} />
-              <ActionBtn icon={Share2} label="Share" onPress={share} />
+              <ActionBtn icon={GraduationCap} label="Add to deck" onPress={whenIdle(() => setSheet('deck'))} />
+              <ActionBtn icon={Copy} label="Copy" onPress={whenIdle(copy)} />
+              <ActionBtn icon={Share2} label="Share" onPress={whenIdle(share)} />
             </View>
           </View>
         </View>
