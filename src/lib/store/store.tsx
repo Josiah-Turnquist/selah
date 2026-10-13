@@ -450,7 +450,10 @@ export function StoreProvider({ children }: { children: ReactNode }) {
         return deck.id;
       },
       updateDeck: (id, patch) =>
-        update((p) => ({ ...p, decks: p.decks.map((d) => (d.id === id ? { ...d, ...patch } : d)) })),
+        update((p) => ({
+          ...p,
+          decks: p.decks.map((d) => (d.id === id ? { ...d, ...patch, updatedAt: Date.now() } : d)),
+        })),
       deleteDeck: (id) => update((p) => ({ ...p, decks: p.decks.filter((d) => d.id !== id) })),
       addCard: (deckId, front, back, ref) =>
         update((p) => ({
@@ -463,6 +466,7 @@ export function StoreProvider({ children }: { children: ReactNode }) {
                     { id: uid('cd_'), front: front.trim(), back: back.trim(), ref, box: 1, due: Date.now(), reviews: 0, createdAt: Date.now() },
                     ...d.cards,
                   ],
+                  updatedAt: Date.now(),
                 }
               : d,
           ),
@@ -472,7 +476,7 @@ export function StoreProvider({ children }: { children: ReactNode }) {
           ...p,
           decks: p.decks.map((d) =>
             d.id === deckId
-              ? { ...d, cards: d.cards.map((c) => (c.id === cardId ? { ...c, ...patch } : c)) }
+              ? { ...d, cards: d.cards.map((c) => (c.id === cardId ? { ...c, ...patch } : c)), updatedAt: Date.now() }
               : d,
           ),
         })),
@@ -480,7 +484,7 @@ export function StoreProvider({ children }: { children: ReactNode }) {
         update((p) => ({
           ...p,
           decks: p.decks.map((d) =>
-            d.id === deckId ? { ...d, cards: d.cards.filter((c) => c.id !== cardId) } : d,
+            d.id === deckId ? { ...d, cards: d.cards.filter((c) => c.id !== cardId), updatedAt: Date.now() } : d,
           ),
         })),
       reviewCard: (deckId, cardId, grade, maxBox) =>

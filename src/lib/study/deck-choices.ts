@@ -30,15 +30,22 @@ export function hasPassage(deck: Deck, p: Passage): boolean {
 export type DeckChoice = { deck: Deck; added: boolean };
 
 /**
+ * When a deck was last edited. Decks untouched since `updatedAt` arrived fall
+ * back to their newest card (or creation), the best record they have.
+ */
+function editedAt(d: Deck): number {
+  return d.updatedAt ?? d.cards.reduce((m, c) => Math.max(m, c.createdAt), d.createdAt);
+}
+
+/**
  * Decks worth offering for a verse: verse decks, plus any other deck that
  * already holds Scripture so it isn't stranded. Fact decks (Books of the Bible
- * and friends) stay out of the way. The deck you added to most recently leads.
+ * and friends) stay out of the way. Most recently edited first.
  */
 export function deckChoices(decks: Deck[], p: Passage | null): DeckChoice[] {
-  const lastAdded = (d: Deck) => d.cards.reduce((m, c) => Math.max(m, c.createdAt), d.createdAt);
   return decks
     .filter((d) => d.kind === 'verse' || d.cards.some((c) => c.ref))
-    .map((d) => ({ deck: d, added: p ? hasPassage(d, p) : false, at: lastAdded(d) }))
+    .map((d) => ({ deck: d, added: p ? hasPassage(d, p) : false, at: editedAt(d) }))
     .sort((a, b) => b.at - a.at)
     .map(({ deck, added }) => ({ deck, added }));
 }
